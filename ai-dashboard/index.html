@@ -80,6 +80,9 @@
   .tile { position: relative; }
   .tile .cover { position: absolute; inset: 0; border-radius: inherit; }
   .tile .label { padding-right: 26px; }
+  .tile-head { display: flex; gap: 10px; align-items: flex-start; }
+  .tile-head img { width: 32px; height: 32px; border-radius: 7px; object-fit: cover; flex: none; }
+  .val-tile .tile-head { align-items: center; }
   .star {
     background: none; border: none; cursor: pointer; padding: 2px; line-height: 1;
     font-size: 18px; color: var(--text-muted); flex: none; margin-left: auto;
@@ -670,7 +673,7 @@ function renderValuations(q) {
     const by = (e.title.match(/\bby ([^?]+)\?/i) || [])[1];
     return `<div class="tile val-tile" title="${esc(`${v.company} valuation (Nasdaq Private Market)`)}">
       <a class="cover" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" aria-label="${esc(e.title)}"></a>
-      <div class="co">${esc(v.company)}</div>
+      <div class="tile-head">${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false">` : ""}<div class="co">${esc(v.company)}</div></div>
       <div class="big">${fmtVal(v.current, "money")}</div>
       <div class="chgs">${chgSpan(valChange(v, 30), "30d")}${chgSpan(valChange(v, 365), "1y")}</div>
       ${sparkline(v)}
@@ -750,7 +753,7 @@ function render() {
     <div class="tile" title="${esc(e.title)}" data-id="${esc(e.id)}"${starView ? ` draggable="true"` : ""}>
       <a class="cover" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" aria-label="${esc(e.title)}" draggable="false"></a>
       ${starBtn(e)}
-      <div class="label">${esc(e.title)}</div>
+      <div class="tile-head">${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false">` : ""}<div class="label">${esc(e.title)}</div></div>
       <div class="kind ${e.headline.kind === "Best guess" ? "est" : ""}">${e.headline.kind}</div>
       <div class="big">${esc(e.headline.big)}</div>
       ${confBadge(e.headline.conf)}
