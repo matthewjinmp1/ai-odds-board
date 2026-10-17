@@ -64,6 +64,16 @@
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
     padding: 14px 16px; text-decoration: none; color: inherit; display: block;
   }
+  .tile { position: relative; }
+  .tile .cover { position: absolute; inset: 0; border-radius: inherit; }
+  .tile .label { padding-right: 26px; }
+  .star {
+    background: none; border: none; cursor: pointer; padding: 2px; line-height: 1;
+    font-size: 18px; color: var(--text-muted); flex: none; margin-left: auto;
+  }
+  .star:hover { color: var(--text-primary); }
+  .star.on { color: #eda100; }
+  .tile .star { position: absolute; top: 10px; right: 10px; z-index: 1; }
   .tile:hover, .card:hover { border-color: var(--text-muted); }
   .tile .label { color: var(--text-secondary); font-size: 12px; min-height: 2.8em; }
   .tile .big { font-size: 24px; font-weight: 650; margin-top: 6px; font-variant-numeric: tabular-nums; }
@@ -119,7 +129,7 @@
   </div>
 </header>
 <main>
-  <h2>Best guesses</h2>
+  <h2 id="tiles-title">Best guesses</h2>
   <div class="tiles" id="tiles"></div>
   <div id="sections"></div>
 </main>
@@ -141,6 +151,20 @@ const AI_WORDS = /\b(ai|a\.i\.|agi|openai|anthropic|claude|fable|opus|sonnet|hai
 
 let events = [];
 let section = "all";
+
+// Starred bets live in this browser's localStorage, keyed by Polymarket event id.
+const STAR_KEY = "ai-odds-board:starred";
+let starred = new Set();
+try { starred = new Set(JSON.parse(localStorage.getItem(STAR_KEY) || "[]")); } catch {}
+function toggleStar(id) {
+  starred.has(id) ? starred.delete(id) : starred.add(id);
+  try { localStorage.setItem(STAR_KEY, JSON.stringify([...starred])); } catch {}
+  render();
+}
+const starBtn = e => {
+  const on = starred.has(e.id);
+  return `<button class="star ${on ? "on" : ""}" data-star="${esc(e.id)}" title="${on ? "Unstar" : "Star"} this bet" aria-label="${on ? "Unstar" : "Star"} this bet" aria-pressed="${on}">${on ? "★" : "☆"}</button>`;
+};
 
 const fmtUSD = n => n >= 1e9 ? `$${(n/1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n/1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n/1e3).toFixed(0)}k` : `$${Math.round(n)}`;
 const pct = p => p >= 0.995 ? ">99%" : p > 0 && p < 0.005 ? "<1%" : `${Math.round(p * 100)}%`;
@@ -424,7 +448,8 @@ async function load() {
 
 function renderChips() {
   const el = document.getElementById("chips");
-  const opts = [{ id: "all", name: "All" }, ...SECTIONS];
+  const nStar = events.filter(e => starred.has(e.id)).length;
+  const opts = [{ id: "all", name: "All" }, { id: "starred", name: `★ Starred${nStar ? ` (${nStar})` : ""}` }, ...SECTIONS];
   el.innerHTML = opts.map(s => `<button class="chip ${s.id === section ? "on" : ""}" data-id="${s.id}">${esc(s.name)}</button>`).join(" ");
   el.querySelectorAll(".chip").forEach(b => b.onclick = () => { section = b.dataset.id; render(); });
 }
@@ -453,6 +478,7 @@ function card(e) {
         <a href="${url}" target="_blank" rel="noopener">${esc(e.title)}</a>
         <div class="meta">${fmtUSD(e.vol)} vol · ${fmtUSD(e.vol24)} 24h${e.end ? ` · ends ${new Date(e.end).toLocaleDateString()}` : ""}</div>
       </div>
+      ${starBtn(e)}
     </div>
     ${e.markets.length > 1 ? `<div class="headline ${e.headline.kind === "Best guess" ? "est" : ""}"><span class="k">${e.headline.kind}</span> <b>${esc(e.headline.big)}</b><div class="hsub">${esc(e.headline.sub)}</div></div>` : ""}
     <div class="rows">${rows.slice(0, SHOW).join("")}<div class="hidden" hidden>${rows.slice(SHOW).join("")}</div></div>
@@ -464,22 +490,27 @@ function render() {
   renderChips();
   const q = document.getElementById("q").value.trim().toLowerCase();
   const minVol = Number(document.getElementById("minvol").value);
+  const starView = section === "starred";
   const list = events
-    .filter(e => e.vol >= minVol)
+    .filter(e => starView ? starred.has(e.id) : e.vol >= minVol)
     .filter(e => !q || `${e.title} ${e.markets.map(m => m.label).join(" ")}`.toLowerCase().includes(q))
-    .filter(e => section === "all" || e.sec === section)
+    .filter(e => section === "all" || starView || e.sec === section)
     .sort((a, b) => b.vol - a.vol);
 
   // Headline tiles: the top few by 24h volume, favouring release dates and IPOs.
   const weight = e => (e.vol24 + e.vol / 30) * (e.headline.kind === "Best guess" ? 4 : 1) * (e.sec === "releases" || e.sec === "ipo" || e.sec === "valuation" ? 2 : 1);
-  const tiles = [...list].sort((a, b) => weight(b) - weight(a)).slice(0, 12);
+  const tiles = starView ? list : [...list].sort((a, b) => weight(b) - weight(a)).slice(0, 12);
+  document.getElementById("tiles-title").textContent = starView ? "Starred bets" : "Best guesses";
+  const empty = starView ? "No starred bets yet. Click ☆ on any bet to pin it here." : "No markets match.";
   document.getElementById("tiles").innerHTML = tiles.length ? tiles.map(e => `
-    <a class="tile" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" title="${esc(e.title)}">
+    <div class="tile" title="${esc(e.title)}">
+      <a class="cover" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" aria-label="${esc(e.title)}"></a>
+      ${starBtn(e)}
       <div class="label">${esc(e.title)}</div>
       <div class="kind ${e.headline.kind === "Best guess" ? "est" : ""}">${e.headline.kind}</div>
       <div class="big">${esc(e.headline.big)}</div>
       <div class="sub">${esc(e.headline.sub)}</div>
-    </a>`).join("") : `<div class="empty">No markets match.</div>`;
+    </div>`).join("") : `<div class="empty">${empty}</div>`;
 
   document.getElementById("sections").innerHTML = SECTIONS.map(s => {
     const items = list.filter(e => e.sec === s.id);
@@ -494,6 +525,10 @@ function render() {
   });
 }
 
+document.addEventListener("click", ev => {
+  const b = ev.target.closest("[data-star]");
+  if (b) { ev.preventDefault(); toggleStar(b.dataset.star); }
+});
 document.getElementById("q").addEventListener("input", render);
 document.getElementById("minvol").addEventListener("change", render);
 load();
