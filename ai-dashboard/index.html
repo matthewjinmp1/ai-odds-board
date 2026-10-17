@@ -33,6 +33,19 @@
       --down: #e66767;
     }
   }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #111110;
+    --surface-1: #1a1a19;
+    --border: #2e2e2c;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8c8b84;
+    --accent: #3987e5;
+    --accent-track: #1f2a38;
+    --up: #3fb950;
+    --down: #e66767;
+  }
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--surface-0); color: var(--text-primary);
@@ -126,6 +139,7 @@
       <option value="1000000">$1M+ volume</option>
     </select>
     <span class="status" id="status">Loading…</span>
+    <button class="chip" id="theme" title="Switch theme"></button>
   </div>
 </header>
 <main>
@@ -287,24 +301,76 @@ function crossing(pts, q) {
 }
 const monotoneUp = pts => { for (let i = 1; i < pts.length; i++) pts[i].y = Math.max(pts[i].y, pts[i - 1].y); return pts; };
 
-function fmtQ(c, f, isDate) {
-  if (c.bound === "hi") return isDate ? `after ${f(c.x)}` : `> ${f(c.x)}`;
-  if (c.bound === "lo") return isDate ? `by ${f(c.x)}` : `< ${f(c.x)}`;
-  return f(c.x);
+// Inverse of the standard normal CDF (Acklam's approximation).
+function invNorm(p) {
+  const a = [-39.69683028665376, 220.9460984245205, -275.9285104469687, 138.3577518672690, -30.66479806614716, 2.506628277459239];
+  const b = [-54.47609879822406, 161.5858368580409, -155.6989798598866, 66.80131188771972, -13.28068155288572];
+  const c = [-0.007784894002430293, -0.3223964580411365, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+  const d = [0.007784695709041462, 0.3224671290700398, 2.445134137142996, 3.754408661907416];
+  const tail = q => (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  if (p < 0.02425) return tail(Math.sqrt(-2 * Math.log(p)));
+  if (p > 1 - 0.02425) return -tail(Math.sqrt(-2 * Math.log(1 - p)));
+  const q = p - 0.5, r = q * q;
+  return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
 }
-function rangeText(pts, f, isDate) {
-  const a = crossing(pts, 0.25), b = crossing(pts, 0.75);
+
+// When the listed bets never reach probability q, extend the curve past them.
+// Dates: assume a constant hazard (the pace of "it happens" implied from t0 to the last
+// listed date) and solve for when the chance reaches q.
+// Numbers: fit a normal curve through all the points (log scale for money) and read q off it.
+const MAX_EXTRAP = 10 * 365 * DAY;
+function quantile(pts, q, { t0, log } = {}) {
+  const c = crossing(pts, q);
+  if (!c.bound) return c;
+  if (t0 != null) {
+    const last = pts.at(-1);
+    if (c.bound !== "hi" || last.y <= 0 || last.y >= 1 || last.x <= t0) return c;
+    const rate = -Math.log(1 - last.y) / (last.x - t0);
+    const x = t0 - Math.log(1 - q) / rate;
+    return x - t0 > MAX_EXTRAP ? c : { x, extrap: true };
+  }
+  const T = log ? Math.log : v => v, inv = log ? Math.exp : v => v;
+  const use = pts.filter(p => p.y > 0.01 && p.y < 0.99 && (!log || p.x > 0));
+  if (use.length < 2) return c;
+  // Least squares of z = invNorm(y) on t = T(x): z = alpha + beta·t.
+  const ts = use.map(p => T(p.x)), zs = use.map(p => invNorm(p.y));
+  const mt = ts.reduce((s, v) => s + v, 0) / ts.length, mz = zs.reduce((s, v) => s + v, 0) / zs.length;
+  const beta = ts.reduce((s, t, i) => s + (t - mt) * (zs[i] - mz), 0) / ts.reduce((s, t) => s + (t - mt) ** 2, 0);
+  if (!(beta > 0)) return c;
+  const tq = mt + (invNorm(q) - mz) / beta, x = inv(tq);
+  const t1 = T(pts[0].x), t2 = T(pts.at(-1).x), span = Math.max(t2 - t1, 1e-9);
+  const ok = c.bound === "hi" ? x > pts.at(-1).x && tq - t2 <= 2 * span
+    : x < pts[0].x && x >= 0 && t1 - tq <= 2 * span;
+  return ok ? { x, extrap: true } : c;
+}
+
+function fmtQ(c, f, isDate) {
+  if (c.bound === "hi") return isDate ? "later" : `> ${f(c.x)}`;
+  if (c.bound === "lo") return isDate ? `by ${f(c.x)}` : `< ${f(c.x)}`;
+  return c.extrap ? `~${f(c.x)}` : f(c.x);
+}
+function rangeText(pts, f, opts = {}) {
+  const a = quantile(pts, 0.25, opts), b = quantile(pts, 0.75, opts);
   if (a.bound && a.bound === b.bound) return "";
-  return ` · 50% range: ${fmtQ(a, f, isDate)} – ${fmtQ(b, f, isDate)}`;
+  return ` · 50% range: ${fmtQ(a, f, opts.t0 != null)} – ${fmtQ(b, f, opts.t0 != null)}`;
+}
+const bigNum = (c, f) => c.bound === "lo" ? `< ${f(c.x)}` : c.bound === "hi" ? `> ${f(c.x)}` : `~${f(c.x)}`;
+
+// Headline + explanation for a date estimate, including extrapolated ones.
+function dateResult(pts, f, t0, lastP, lastX) {
+  const med = quantile(pts, 0.5, { t0 });
+  if (med.bound === "hi") return { big: `After ${f(med.x)}`, sub: `only ${pct(lastP)} chance by then` };
+  const note = med.extrap ? `extrapolated: ${pct(lastP)} by ${f(lastX)}, same pace after` : "best-guess date (50/50)";
+  return { big: med.extrap ? `~${f(med.x)}` : f(med.x), sub: `${note}${rangeText(pts, f, { t0 })}` };
 }
 
 // "Released by Oct 31?" ladders: each market is P(happens by that date), i.e. a CDF over time.
 function dateLadder(real) {
+  const now = Date.now();
   const pts = monotoneUp(real.map(m => ({ x: m.date.hi - 1, y: m.p })).sort((a, b) => a.x - b.x));
-  if (pts[0].x > Date.now()) pts.unshift({ x: Date.now(), y: 0 });
-  const f = x => fmtDate(x), med = crossing(pts, 0.5);
-  if (med.bound === "hi") return { big: `After ${f(med.x)}`, sub: `only ${pct(pts.at(-1).y)} chance by then` };
-  return { big: f(med.x), sub: `best-guess date (50/50)${rangeText(pts, f, true)}` };
+  if (pts[0].x > now) pts.unshift({ x: now, y: 0 });
+  const f = x => fmtDate(x);
+  return dateResult(pts, f, Math.min(now, pts[0].x), pts.at(-1).y, pts.at(-1).x);
 }
 
 // "Released on…?" / "Which month?" buckets: mutually exclusive windows, plus maybe a "No … by X" tail.
@@ -316,9 +382,7 @@ function dateBuckets(real, none) {
   const pts = [{ x: real[0].date.lo, y: 0 }];
   let cum = 0;
   for (const m of real) { cum += m.p / total; pts.push({ x: m.date.hi, y: cum }); }
-  const med = crossing(pts, 0.5);
-  if (med.bound === "hi") return { big: `After ${f(med.x)}`, sub: `only ${pct(cum)} chance by then` };
-  return { big: f(med.x), sub: `best-guess date (50/50)${rangeText(pts, f, true)}` };
+  return dateResult(pts, f, Math.min(Date.now(), real[0].date.lo), cum, pts.at(-1).x);
 }
 
 // "Valuation hit ↑$2T?", "Arena debut 1480+?", "score 60%+?": each market is P(value ≥ x).
@@ -326,21 +390,20 @@ function numThresholds(real, title) {
   const unit = real[0].num.unit, f = v => fmtVal(v, unit);
   const up = real.filter(m => m.num.dir !== "down"), down = real.filter(m => m.num.dir === "down");
   const peak = /\b(hit|reach|highest)\b/i.test(title);
+  let pts, label;
   if (up.length >= 2) {
     // Survival S(x) = P(value ≥ x) → CDF 1 − S, made monotone.
-    const pts = monotoneUp(up.map(m => ({ x: thrVal(m.num), y: 1 - m.p })).sort((a, b) => a.x - b.x));
-    const med = crossing(pts, 0.5);
-    const big = med.bound === "lo" ? `< ${f(med.x)}` : med.bound === "hi" ? `> ${f(med.x)}` : `~${f(med.x)}`;
-    return { big, sub: `${peak ? "implied peak" : "implied value"} (median)${rangeText(pts, f)}` };
-  }
-  if (down.length >= 2) {
+    pts = monotoneUp(up.map(m => ({ x: thrVal(m.num), y: 1 - m.p })).sort((a, b) => a.x - b.x));
+    label = peak ? "implied peak" : "implied value";
+  } else if (down.length >= 2) {
     // P(drops to ≤ x) is already a CDF of the low point.
-    const pts = monotoneUp(down.map(m => ({ x: thrVal(m.num), y: m.p })).sort((a, b) => a.x - b.x));
-    const med = crossing(pts, 0.5);
-    const big = med.bound === "lo" ? `≤ ${f(med.x)}` : med.bound === "hi" ? `> ${f(med.x)}` : `~${f(med.x)}`;
-    return { big, sub: `implied low (median)${rangeText(pts, f)}` };
-  }
-  return null;
+    pts = monotoneUp(down.map(m => ({ x: thrVal(m.num), y: m.p })).sort((a, b) => a.x - b.x));
+    label = "implied low";
+  } else return null;
+  const opts = { log: unit === "money" };
+  const med = quantile(pts, 0.5, opts);
+  const note = med.extrap ? `${label}, extrapolated past the listed levels` : `${label} (median)`;
+  return { big: bigNum(med, f), sub: `${note}${rangeText(pts, f, opts)}` };
 }
 
 // "<500B | 500–750B | … | 1.5T+ | No IPO" or "0 | 1 | 2 | 3": mutually exclusive numeric buckets.
@@ -363,8 +426,8 @@ function numBuckets(real, none) {
   const pts = [{ x: b[0].lo, y: 0 }];
   let cum = 0;
   for (const k of b) { cum += k.p; pts.push({ x: k.hi, y: cum }); }
-  const med = crossing(pts, 0.5);
-  return { big: `~${f(med.x)}`, sub: `implied median${cond}${rangeText(pts, f)}` };
+  const med = quantile(pts, 0.5);
+  return { big: bigNum(med, f), sub: `implied median${cond}${rangeText(pts, f)}` };
 }
 
 function estimate(markets, negRisk, title) {
@@ -524,6 +587,23 @@ function render() {
     b.textContent = hidden.hidden ? b.textContent.replace("Hide", "Show") : b.textContent.replace("Show", "Hide");
   });
 }
+
+// Theme: Auto (follow the OS) → Light → Dark, remembered in this browser.
+const THEME_KEY = "ai-odds-board:theme";
+const THEMES = { auto: "◐ Auto", light: "☀ Light", dark: "☾ Dark" };
+let theme = "auto";
+try { theme = localStorage.getItem(THEME_KEY) || "auto"; } catch {}
+function applyTheme() {
+  if (theme === "auto") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  document.getElementById("theme").textContent = THEMES[theme];
+}
+document.getElementById("theme").onclick = () => {
+  theme = { auto: "light", light: "dark", dark: "auto" }[theme] || "auto";
+  try { localStorage.setItem(THEME_KEY, theme); } catch {}
+  applyTheme();
+};
+applyTheme();
 
 document.addEventListener("click", ev => {
   const b = ev.target.closest("[data-star]");
