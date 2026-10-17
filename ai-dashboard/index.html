@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Odds Board</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f4f4f2;
+    --surface-1: #fcfcfb;
+    --border: #e2e1dc;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #85847f;
+    --accent: #2a78d6;
+    --accent-track: #e6eef9;
+    --up: #008300;
+    --down: #d03b3a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-0: #111110;
+      --surface-1: #1a1a19;
+      --border: #2e2e2c;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #8c8b84;
+      --accent: #3987e5;
+      --accent-track: #1f2a38;
+      --up: #3fb950;
+      --down: #e66767;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface-0); color: var(--text-primary);
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 5; background: var(--surface-0);
+    border-bottom: 1px solid var(--border); padding: 14px 24px;
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  }
+  h1 { font-size: 18px; margin: 0 16px 0 0; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: 1; }
+  input[type=search], select {
+    background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 10px; font: inherit;
+  }
+  input[type=search] { min-width: 220px; flex: 0 1 300px; }
+  .chip {
+    background: var(--surface-1); border: 1px solid var(--border); color: var(--text-secondary);
+    border-radius: 999px; padding: 5px 12px; cursor: pointer; font: inherit;
+  }
+  .chip.on { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
+  .status { color: var(--text-muted); font-size: 12px; margin-left: auto; }
+  main { padding: 20px 24px 60px; max-width: 1500px; margin: 0 auto; }
+  h2 { font-size: 15px; margin: 28px 0 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .06em; }
+  h2 .count { color: var(--text-muted); font-weight: 400; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+  .tile {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; text-decoration: none; color: inherit; display: block;
+  }
+  .tile:hover, .card:hover { border-color: var(--text-muted); }
+  .tile .label { color: var(--text-secondary); font-size: 12px; min-height: 2.8em; }
+  .tile .big { font-size: 24px; font-weight: 650; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .tile .sub { color: var(--text-muted); font-size: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .card-head { display: flex; gap: 10px; align-items: flex-start; }
+  .card-head img { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; flex: none; }
+  .card-head a { color: var(--text-primary); text-decoration: none; font-weight: 600; }
+  .card-head a:hover { text-decoration: underline; }
+  .meta { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+  .headline { font-size: 13px; color: var(--text-secondary); }
+  .headline b { color: var(--text-primary); font-size: 16px; }
+  .headline .k, .tile .kind { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+  .headline.est { background: var(--accent-track); border-radius: 8px; padding: 8px 10px; }
+  .headline.est .k, .tile .kind.est { color: var(--accent); font-weight: 600; }
+  .hsub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .tile .kind { margin-top: 8px; }
+  .rows, .rows .hidden:not([hidden]) { display: flex; flex-direction: column; gap: 6px; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) 120px 46px 48px; gap: 8px; align-items: center; font-size: 13px; }
+  .row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+  .bar { height: 8px; background: var(--accent-track); border-radius: 4px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--accent); border-radius: 0 4px 4px 0; }
+  .pct { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .chg { text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--text-muted); }
+  .chg.up { color: var(--up); } .chg.down { color: var(--down); }
+  .more { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font: inherit; font-size: 12px; text-align: left; }
+  .empty { color: var(--text-muted); padding: 40px 0; text-align: center; }
+  @media (max-width: 600px) {
+    header, main { padding-left: 16px; padding-right: 16px; }
+    .grid { grid-template-columns: 1fr; }
+    .row { grid-template-columns: minmax(0, 1fr) 70px 42px 44px; }
+    input[type=search] { min-width: 0; flex: 1 1 100%; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>AI Odds Board</h1>
+  <div class="controls">
+    <input type="search" id="q" placeholder="Search markets (e.g. Claude, IPO, Gemini)">
+    <div id="chips"></div>
+    <select id="minvol" title="Minimum total volume">
+      <option value="0">Any volume</option>
+      <option value="10000" selected>$10k+ volume</option>
+      <option value="100000">$100k+ volume</option>
+      <option value="1000000">$1M+ volume</option>
+    </select>
+    <span class="status" id="status">Loading…</span>
+  </div>
+</header>
+<main>
+  <h2>Best guesses</h2>
+  <div class="tiles" id="tiles"></div>
+  <div id="sections"></div>
+</main>
+
+<script>
+const API = "https://gamma-api.polymarket.com";
+const TAGS = ["ai", "openai", "anthropic", "claude", "gemini", "google", "xai", "nvidia"];
+const REFRESH_MS = 60_000;
+
+// First match wins, so order matters.
+const SECTIONS = [
+  { id: "releases", name: "Model releases", re: /(released|release|launch|debut|drop)/i },
+  { id: "ipo", name: "IPOs", re: /\bipo\b|public ticker|list on|exchange will/i },
+  { id: "valuation", name: "Valuations & market cap", re: /valuation|market cap|largest (company|private)|private compan|\$\d+ ?[tb]\b|flip/i },
+  { id: "bench", name: "Best model & benchmarks", re: /best ai model|arena|humanity|benchmark|score|openrouter|millennium|#1 ai|top ai/i },
+  { id: "other", name: "Everything else AI", re: /./ },
+];
+const AI_WORDS = /\b(ai|a\.i\.|agi|openai|anthropic|claude|fable|opus|sonnet|haiku|gpt|chatgpt|gemini|deepmind|grok|xai|llama|meta ai|deepseek|qwen|mistral|nvidia|data center|chatbot|llm|model)\b/i;
+
+let events = [];
+let section = "all";
+
+const fmtUSD = n => n >= 1e9 ? `$${(n/1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n/1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n/1e3).toFixed(0)}k` : `$${Math.round(n)}`;
+const pct = p => p >= 0.995 ? ">99%" : p > 0 && p < 0.005 ? "<1%" : `${Math.round(p * 100)}%`;
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+async function fetchTag(tag) {
+  const out = [];
+  for (let offset = 0; offset < 1000; offset += 100) {
+    const r = await fetch(`${API}/events?tag_slug=${tag}&active=true&closed=false&limit=100&offset=${offset}`);
+    if (!r.ok) break;
+    const page = await r.json();
+    out.push(...page);
+    if (page.length < 100) break;
+  }
+  return out;
+}
+
+function yesPrice(m) {
+  try {
+    const outcomes = JSON.parse(m.outcomes), prices = JSON.parse(m.outcomePrices);
+    const i = outcomes.findIndex(o => /^yes$/i.test(o));
+    return Number(prices[i >= 0 ? i : 0]);
+  } catch { return NaN; }
+}
+
+// ---------- Consolidating a group of bets into one estimate ----------
+const DAY = 86400000;
+const MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+const monthIdx = s => MONTHS.indexOf(s.slice(0, 3).toLowerCase());
+const NONE_RE = /^(no|not|none)\b/i;
+const MULT = { k: 1e3, m: 1e6, b: 1e9, t: 1e12 };
+
+// "October 31" / "Dec 31, 2026". Labels without a year take the year of the market's end date.
+function parseDay(s, endMs) {
+  const m = s.trim().match(/^([a-z]{3,9})\.?\s+(\d{1,2})(?:,?\s*(\d{4}))?$/i);
+  if (!m || monthIdx(m[1]) < 0) return null;
+  if (m[3]) return new Date(+m[3], monthIdx(m[1]), +m[2]).getTime();
+  const y = new Date(endMs ?? Date.now()).getFullYear();
+  const d = new Date(y, monthIdx(m[1]), +m[2]).getTime();
+  return endMs && d > endMs + 3 * DAY ? new Date(y - 1, monthIdx(m[1]), +m[2]).getTime() : d;
+}
+
+// A date label as a [lo, hi) window: a day, a month ("November 2026") or a range ("Oct 12–Oct 18").
+function parseDateBucket(label, endMs) {
+  const s = label.trim();
+  const mo = s.match(/^([a-z]{3,9})\s+(\d{4})$/i);
+  if (mo && monthIdx(mo[1]) >= 0) {
+    const y = +mo[2], i = monthIdx(mo[1]);
+    return { lo: new Date(y, i, 1).getTime(), hi: new Date(y, i + 1, 1).getTime(), coarse: true };
+  }
+  const d = parseDay(s, endMs);
+  if (d != null) return { lo: d, hi: d + DAY };
+  const parts = s.split(/\s*[–—]\s*|\s+-\s+|\s+to\s+/);
+  if (parts.length === 2) {
+    const a = parseDay(parts[0], endMs), b = parseDay(parts[1], endMs);
+    if (a != null && b != null) return { lo: a, hi: b + DAY };
+  }
+  return null;
+}
+
+function numTok(t) {
+  const m = t.trim().match(/^\$?\s*(\d+(?:\.\d+)?)\s*([kmbt%])?$/i);
+  return m ? { n: +m[1], suf: (m[2] || "").toLowerCase() } : null;
+}
+const tokVal = t => t.n * (MULT[t.suf] || 1);
+
+// "↑$2.0T", "1480+", "<500B", "$1.25–$1.5T", "60%+", "3" → { x } or { lo, hi }, plus dir and unit.
+function parseNumLabel(label) {
+  let s = label.replace(/,/g, "").trim(), dir = null;
+  if (/^[↑↓]/.test(s)) { dir = s[0] === "↑" ? "up" : "down"; s = s.slice(1).trim(); }
+  if (!/\d/.test(s) || /[^\d.$<>+\-–—\skmbt%]/i.test(s)) return null;
+  const unit = s.includes("%") ? "pct" : /\$|\d\s*[kmbt]/i.test(s) ? "money" : "num";
+  let r = null;
+  if (s.startsWith("<")) { const t = numTok(s.slice(1)); r = t && { lo: -Infinity, hi: tokVal(t) }; }
+  else if (s.startsWith(">")) { const t = numTok(s.slice(1)); r = t && { lo: tokVal(t), hi: Infinity }; }
+  else if (s.endsWith("+")) { const t = numTok(s.slice(0, -1)); r = t && { lo: tokVal(t), hi: Infinity, plus: true }; }
+  else {
+    const parts = s.split(/\s*[–—-]\s*/);
+    if (parts.length === 2) {
+      const a = numTok(parts[0]), b = numTok(parts[1]);
+      if (a && b) { if (!a.suf && b.suf) a.suf = b.suf; r = { lo: tokVal(a), hi: tokVal(b) }; }
+    } else { const t = numTok(s); r = t && { x: tokVal(t) }; }
+  }
+  return r && { ...r, dir, unit };
+}
+const thrVal = n => n.x ?? (Number.isFinite(n.lo) ? n.lo : n.hi);
+
+function fmtVal(v, unit) {
+  if (unit === "money") {
+    const trim = x => String(+x);
+    if (v >= 1e12) return `$${trim((v / 1e12).toFixed(2))}T`;
+    if (v >= 1e9) return `$${trim((v / 1e9).toFixed(v >= 1e11 ? 0 : 1))}B`;
+    if (v >= 1e6) return `$${trim((v / 1e6).toFixed(1))}M`;
+    return `$${v.toFixed(2)}`;
+  }
+  if (unit === "count") {
+    for (const [d, suf] of [[1e12, "T"], [1e9, "B"], [1e6, "M"], [1e3, "K"]]) if (v >= d) return `${trim1(v / d)}${suf}`;
+  }
+  if (unit === "pct") return `${trim1(v)}%`;
+  return v >= 100 ? Math.round(v).toLocaleString() : trim1(v);
+}
+const trim1 = v => String(+v.toFixed(1));
+function fmtDate(ms, coarse) {
+  const d = new Date(ms), sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(undefined, coarse
+    ? { month: "short", year: "numeric" }
+    : { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
+}
+
+// Where a piecewise-linear CDF (points sorted by x, y non-decreasing) reaches probability q.
+function crossing(pts, q) {
+  if (pts[0].y >= q) return { x: pts[0].x, bound: "lo" };
+  for (let i = 1; i < pts.length; i++) {
+    if (pts[i].y >= q) {
+      const a = pts[i - 1], b = pts[i];
+      return { x: a.x + (q - a.y) / (b.y - a.y || 1) * (b.x - a.x) };
+    }
+  }
+  return { x: pts.at(-1).x, bound: "hi" };
+}
+const monotoneUp = pts => { for (let i = 1; i < pts.length; i++) pts[i].y = Math.max(pts[i].y, pts[i - 1].y); return pts; };
+
+function fmtQ(c, f, isDate) {
+  if (c.bound === "hi") return isDate ? `after ${f(c.x)}` : `> ${f(c.x)}`;
+  if (c.bound === "lo") return isDate ? `by ${f(c.x)}` : `< ${f(c.x)}`;
+  return f(c.x);
+}
+function rangeText(pts, f, isDate) {
+  const a = crossing(pts, 0.25), b = crossing(pts, 0.75);
+  if (a.bound && a.bound === b.bound) return "";
+  return ` · 50% range: ${fmtQ(a, f, isDate)} – ${fmtQ(b, f, isDate)}`;
+}
+
+// "Released by Oct 31?" ladders: each market is P(happens by that date), i.e. a CDF over time.
+function dateLadder(real) {
+  const pts = monotoneUp(real.map(m => ({ x: m.date.hi - 1, y: m.p })).sort((a, b) => a.x - b.x));
+  if (pts[0].x > Date.now()) pts.unshift({ x: Date.now(), y: 0 });
+  const f = x => fmtDate(x), med = crossing(pts, 0.5);
+  if (med.bound === "hi") return { big: `After ${f(med.x)}`, sub: `only ${pct(pts.at(-1).y)} chance by then` };
+  return { big: f(med.x), sub: `best-guess date (50/50)${rangeText(pts, f, true)}` };
+}
+
+// "Released on…?" / "Which month?" buckets: mutually exclusive windows, plus maybe a "No … by X" tail.
+function dateBuckets(real, none) {
+  const total = [...real, ...none].reduce((s, m) => s + m.p, 0);
+  if (total <= 0) return null;
+  real.sort((a, b) => a.date.lo - b.date.lo);
+  const coarse = real.some(m => m.date.coarse), f = x => fmtDate(x - 1, coarse);
+  const pts = [{ x: real[0].date.lo, y: 0 }];
+  let cum = 0;
+  for (const m of real) { cum += m.p / total; pts.push({ x: m.date.hi, y: cum }); }
+  const med = crossing(pts, 0.5);
+  if (med.bound === "hi") return { big: `After ${f(med.x)}`, sub: `only ${pct(cum)} chance by then` };
+  return { big: f(med.x), sub: `best-guess date (50/50)${rangeText(pts, f, true)}` };
+}
+
+// "Valuation hit ↑$2T?", "Arena debut 1480+?", "score 60%+?": each market is P(value ≥ x).
+function numThresholds(real, title) {
+  const unit = real[0].num.unit, f = v => fmtVal(v, unit);
+  const up = real.filter(m => m.num.dir !== "down"), down = real.filter(m => m.num.dir === "down");
+  const peak = /\b(hit|reach|highest)\b/i.test(title);
+  if (up.length >= 2) {
+    // Survival S(x) = P(value ≥ x) → CDF 1 − S, made monotone.
+    const pts = monotoneUp(up.map(m => ({ x: thrVal(m.num), y: 1 - m.p })).sort((a, b) => a.x - b.x));
+    const med = crossing(pts, 0.5);
+    const big = med.bound === "lo" ? `< ${f(med.x)}` : med.bound === "hi" ? `> ${f(med.x)}` : `~${f(med.x)}`;
+    return { big, sub: `${peak ? "implied peak" : "implied value"} (median)${rangeText(pts, f)}` };
+  }
+  if (down.length >= 2) {
+    // P(drops to ≤ x) is already a CDF of the low point.
+    const pts = monotoneUp(down.map(m => ({ x: thrVal(m.num), y: m.p })).sort((a, b) => a.x - b.x));
+    const med = crossing(pts, 0.5);
+    const big = med.bound === "lo" ? `≤ ${f(med.x)}` : med.bound === "hi" ? `> ${f(med.x)}` : `~${f(med.x)}`;
+    return { big, sub: `implied low (median)${rangeText(pts, f)}` };
+  }
+  return null;
+}
+
+// "<500B | 500–750B | … | 1.5T+ | No IPO" or "0 | 1 | 2 | 3": mutually exclusive numeric buckets.
+function numBuckets(real, none) {
+  const unit = real[0].num.unit, f = v => fmtVal(v, unit);
+  const tot = real.reduce((s, m) => s + m.p, 0), noneP = none.reduce((s, m) => s + m.p, 0);
+  if (tot <= 0) return null;
+  const cond = noneP / (tot + noneP) > 0.02 ? ` · assumes it happens (${pct(noneP / (tot + noneP))} it doesn't)` : "";
+  if (real.every(m => m.num.x != null)) {
+    const mean = real.reduce((s, m) => s + m.num.x * m.p, 0) / tot;
+    return { big: `≈${f(mean)}`, sub: `expected value${cond}` };
+  }
+  const b = real.map(m => ({ lo: m.num.lo ?? m.num.x, hi: m.num.hi ?? m.num.x, p: m.p / tot }))
+    .sort((a, c) => (Number.isFinite(a.lo) ? a.lo : a.hi) - (Number.isFinite(c.lo) ? c.lo : c.hi));
+  for (let i = 0; i < b.length - 1; i++) if (b[i].hi < b[i + 1].lo) b[i].hi = b[i + 1].lo; // "12-15 | 16-19"
+  const width = i => (b[i] && Number.isFinite(b[i].lo) && Number.isFinite(b[i].hi)) ? b[i].hi - b[i].lo : null;
+  if (!Number.isFinite(b[0].lo)) b[0].lo = Math.max(0, b[0].hi - (width(1) ?? b[0].hi * 0.5));
+  const L = b.length - 1;
+  if (!Number.isFinite(b[L].hi)) b[L].hi = b[L].lo + (width(L - 1) ?? b[L].lo * 0.5);
+  const pts = [{ x: b[0].lo, y: 0 }];
+  let cum = 0;
+  for (const k of b) { cum += k.p; pts.push({ x: k.hi, y: cum }); }
+  const med = crossing(pts, 0.5);
+  return { big: `~${f(med.x)}`, sub: `implied median${cond}${rangeText(pts, f)}` };
+}
+
+function estimate(markets, negRisk, title) {
+  if (markets.length < 2) return null;
+  const real = markets.filter(m => !NONE_RE.test(m.label)), none = markets.filter(m => NONE_RE.test(m.label));
+  if (real.length < 2) return null;
+  const dates = real.map(m => parseDateBucket(m.label, m.end));
+  if (dates.every(Boolean)) {
+    real.forEach((m, i) => { m.date = dates[i]; m.key = dates[i].lo; });
+    return negRisk ? dateBuckets(real, none) : dateLadder(real);
+  }
+  const nums = real.map(m => parseNumLabel(m.label));
+  if (nums.every(Boolean)) {
+    const moneyish = real.some(m => m.label.includes("$")) || /valuation|market cap|price|raise|revenue|\$/i.test(title);
+    if (!moneyish) nums.forEach(n => { if (n.unit === "money") n.unit = "count"; });
+    real.forEach((m, i) => { m.num = nums[i]; m.key = thrVal(nums[i]); });
+    return negRisk ? numBuckets(real, none) : numThresholds(real, title);
+  }
+  if (!negRisk && markets.length >= 3) {
+    const n = markets.reduce((s, m) => s + m.p, 0);
+    return { big: `≈${trim1(n)} of ${markets.length}`, sub: "expected number that happen" };
+  }
+  return null;
+}
+
+function prepare(e) {
+  const markets = (e.markets || [])
+    .filter(m => !m.closed && m.active !== false)
+    .map(m => ({
+      label: m.groupItemTitle || m.question,
+      question: m.question,
+      p: yesPrice(m),
+      chg: Number(m.oneDayPriceChange) || 0,
+      vol: Number(m.volume) || 0,
+      end: m.endDate ? Date.parse(m.endDate) : null,
+    }))
+    .filter(m => Number.isFinite(m.p));
+  if (!markets.length) return null;
+
+  const negRisk = !!(e.negRisk || e.markets?.[0]?.negRisk);
+  const est = estimate(markets, negRisk, e.title);
+  // Ordered bets (dates, numbers) read best in order with any "No … by" bucket last; the rest by odds.
+  if (markets.some(m => m.key != null)) {
+    markets.sort((a, b) => (a.key ?? Infinity) - (b.key ?? Infinity));
+  } else {
+    markets.sort((a, b) => b.p - a.p);
+  }
+
+  let headline;
+  if (est) headline = { ...est, kind: "Best guess" };
+  else if (markets.length === 1) headline = { big: pct(markets[0].p), sub: "chance of Yes", kind: "Odds" };
+  else headline = { big: markets[0].label, sub: `leading at ${pct(markets[0].p)}`, kind: "Leader" };
+
+  const text = `${e.title} ${e.slug}`;
+  return {
+    id: e.id, title: e.title, slug: e.slug, image: e.icon || e.image,
+    vol: Number(e.volume) || 0, vol24: Number(e.volume24hr) || 0,
+    end: e.endDate, markets, sec: SECTIONS.find(s => s.re.test(text)).id, headline,
+  };
+}
+
+async function load() {
+  const status = document.getElementById("status");
+  try {
+    const lists = await Promise.all(TAGS.map(t => fetchTag(t).catch(() => [])));
+    const seen = new Map();
+    for (const e of lists.flat()) {
+      if (seen.has(e.id)) continue;
+      // Broad tags (google, nvidia) pull in non-AI markets; keep only AI-ish ones from those.
+      if (!AI_WORDS.test(`${e.title} ${e.description || ""}`.slice(0, 600))) continue;
+      const p = prepare(e);
+      if (p) seen.set(e.id, p);
+    }
+    events = [...seen.values()];
+    status.textContent = `${events.length} markets · updated ${new Date().toLocaleTimeString()}`;
+    render();
+  } catch (err) {
+    status.textContent = `Couldn't reach Polymarket (${err.message}). Retrying…`;
+  }
+}
+
+function renderChips() {
+  const el = document.getElementById("chips");
+  const opts = [{ id: "all", name: "All" }, ...SECTIONS];
+  el.innerHTML = opts.map(s => `<button class="chip ${s.id === section ? "on" : ""}" data-id="${s.id}">${esc(s.name)}</button>`).join(" ");
+  el.querySelectorAll(".chip").forEach(b => b.onclick = () => { section = b.dataset.id; render(); });
+}
+
+function row(m) {
+  const c = Math.round(m.chg * 100);
+  const cls = c > 0 ? "up" : c < 0 ? "down" : "";
+  const chg = c === 0 ? "–" : `${c > 0 ? "▲" : "▼"}${Math.abs(c)}`;
+  const tip = `${m.question}\nYes: ${pct(m.p)} · 24h: ${c >= 0 ? "+" : ""}${c} pts · volume ${fmtUSD(m.vol)}`;
+  return `<div class="row" title="${esc(tip)}">
+    <span class="name">${esc(m.label)}</span>
+    <span class="bar"><span style="width:${Math.max(0, Math.min(100, m.p * 100))}%"></span></span>
+    <span class="pct">${pct(m.p)}</span>
+    <span class="chg ${cls}">${chg}</span>
+  </div>`;
+}
+
+function card(e) {
+  const SHOW = 6;
+  const url = `https://polymarket.com/event/${e.slug}`;
+  const rows = e.markets.map(row);
+  return `<article class="card">
+    <div class="card-head">
+      ${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy">` : ""}
+      <div>
+        <a href="${url}" target="_blank" rel="noopener">${esc(e.title)}</a>
+        <div class="meta">${fmtUSD(e.vol)} vol · ${fmtUSD(e.vol24)} 24h${e.end ? ` · ends ${new Date(e.end).toLocaleDateString()}` : ""}</div>
+      </div>
+    </div>
+    ${e.markets.length > 1 ? `<div class="headline ${e.headline.kind === "Best guess" ? "est" : ""}"><span class="k">${e.headline.kind}</span> <b>${esc(e.headline.big)}</b><div class="hsub">${esc(e.headline.sub)}</div></div>` : ""}
+    <div class="rows">${rows.slice(0, SHOW).join("")}<div class="hidden" hidden>${rows.slice(SHOW).join("")}</div></div>
+    ${rows.length > SHOW ? `<button class="more">Show ${rows.length - SHOW} more</button>` : ""}
+  </article>`;
+}
+
+function render() {
+  renderChips();
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  const minVol = Number(document.getElementById("minvol").value);
+  const list = events
+    .filter(e => e.vol >= minVol)
+    .filter(e => !q || `${e.title} ${e.markets.map(m => m.label).join(" ")}`.toLowerCase().includes(q))
+    .filter(e => section === "all" || e.sec === section)
+    .sort((a, b) => b.vol - a.vol);
+
+  // Headline tiles: the top few by 24h volume, favouring release dates and IPOs.
+  const weight = e => (e.vol24 + e.vol / 30) * (e.headline.kind === "Best guess" ? 4 : 1) * (e.sec === "releases" || e.sec === "ipo" || e.sec === "valuation" ? 2 : 1);
+  const tiles = [...list].sort((a, b) => weight(b) - weight(a)).slice(0, 12);
+  document.getElementById("tiles").innerHTML = tiles.length ? tiles.map(e => `
+    <a class="tile" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" title="${esc(e.title)}">
+      <div class="label">${esc(e.title)}</div>
+      <div class="kind ${e.headline.kind === "Best guess" ? "est" : ""}">${e.headline.kind}</div>
+      <div class="big">${esc(e.headline.big)}</div>
+      <div class="sub">${esc(e.headline.sub)}</div>
+    </a>`).join("") : `<div class="empty">No markets match.</div>`;
+
+  document.getElementById("sections").innerHTML = SECTIONS.map(s => {
+    const items = list.filter(e => e.sec === s.id);
+    if (!items.length) return "";
+    return `<h2>${esc(s.name)} <span class="count">${items.length}</span></h2><div class="grid">${items.map(card).join("")}</div>`;
+  }).join("");
+
+  document.querySelectorAll(".more").forEach(b => b.onclick = () => {
+    const hidden = b.previousElementSibling.querySelector(".hidden");
+    hidden.hidden = !hidden.hidden;
+    b.textContent = hidden.hidden ? b.textContent.replace("Hide", "Show") : b.textContent.replace("Show", "Hide");
+  });
+}
+
+document.getElementById("q").addEventListener("input", render);
+document.getElementById("minvol").addEventListener("change", render);
+load();
+setInterval(load, REFRESH_MS);
+</script>
+</body>
+</html>
