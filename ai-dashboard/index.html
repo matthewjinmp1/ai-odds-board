@@ -117,6 +117,15 @@
   .chg { text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--text-muted); }
   .chg.up { color: var(--up); } .chg.down { color: var(--down); }
   .more { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font: inherit; font-size: 12px; text-align: left; }
+  .val-tile .big { margin-top: 2px; }
+  .val-tile .co { font-weight: 600; color: var(--text-primary); font-size: 14px; }
+  .chgs { font-size: 12px; font-variant-numeric: tabular-nums; display: flex; gap: 10px; margin-top: 2px; }
+  .chgs .up { color: var(--up); } .chgs .down { color: var(--down); }
+  .spark { display: block; width: 100%; height: 36px; margin: 8px 0 6px; }
+  .spark polyline { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .now { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-secondary); }
+  .now b { color: var(--text-primary); }
+  .now .spark { width: 110px; height: 24px; margin: 0; margin-left: auto; }
   .empty { color: var(--text-muted); padding: 40px 0; text-align: center; }
   @media (max-width: 600px) {
     header, main { padding-left: 16px; padding-right: 16px; }
@@ -143,6 +152,7 @@
   </div>
 </header>
 <main>
+  <div id="vals"></div>
   <h2 id="tiles-title">Best guesses</h2>
   <div class="tiles" id="tiles"></div>
   <div id="sections"></div>
@@ -161,10 +171,11 @@ const SECTIONS = [
   { id: "bench", name: "Best model & benchmarks", re: /best ai model|arena|humanity|benchmark|score|openrouter|millennium|#1 ai|top ai/i },
   { id: "other", name: "Everything else AI", re: /./ },
 ];
-const AI_WORDS = /\b(ai|a\.i\.|agi|openai|anthropic|claude|fable|opus|sonnet|haiku|gpt|chatgpt|gemini|deepmind|grok|xai|llama|meta ai|deepseek|qwen|mistral|nvidia|data center|chatbot|llm|model)\b/i;
+const AI_WORDS = /\b(ai|a\.i\.|agi|openai|anthropic|claude|fable|opus|sonnet|haiku|gpt|chatgpt|gemini|deepmind|grok|xai|llama|meta ai|deepseek|qwen|mistral|nvidia|data center|chatbot|llm|model|databricks|perplexity|lambda|anysphere|cursor|cohere|scale ai|cerebras|coreweave|groq|thinking machines|safe superintelligence|ssi|moonshot|kimi|minimax|z\.ai|figure ai)\b/i;
 
 let events = [];
 let section = "all";
+let valuations = new Map(); // event id → { company, current, history: [[unixSec, value]], source }
 
 // Starred bets live in this browser's localStorage, keyed by Polymarket event id.
 const STAR_KEY = "ai-odds-board:starred";
@@ -504,9 +515,74 @@ async function load() {
     events = [...seen.values()];
     status.textContent = `${events.length} markets · updated ${new Date().toLocaleTimeString()}`;
     render();
+    loadValuations();
   } catch (err) {
     status.textContent = `Couldn't reach Polymarket (${err.message}). Retrying…`;
   }
+}
+
+// Current private valuations come from our local server (server.py), which reads them off
+// Polymarket's "valuation hit" event pages. Without that server this quietly does nothing.
+async function loadValuations() {
+  const targets = events.filter(e => /valuation/i.test(e.title) && /\bhit\b/i.test(e.title));
+  await Promise.all(targets.map(async e => {
+    try {
+      const r = await fetch(`/api/valuation?slug=${encodeURIComponent(e.slug)}`);
+      if (!r.ok) return;
+      const v = await r.json();
+      if (!v || !v.current) return;
+      valuations.set(e.id, v);
+      // The peak can't be below today's value, so add that as a certain "hit" before estimating.
+      const anchor = { label: `↑$${(v.current / 1e9).toFixed(3)}B`, p: 1, chg: 0, vol: 0 };
+      const est = estimate([...e.markets.map(m => ({ ...m })), anchor], false, e.title);
+      if (est) e.headline = { ...est, kind: "Best guess" };
+    } catch {}
+  }));
+  if (valuations.size) render();
+}
+
+function valChange(v, days) {
+  const h = v.history;
+  if (!h?.length) return null;
+  const cutoff = Date.now() / 1000 - days * 86400;
+  const past = days >= 365 ? h[0] : [...h].reverse().find(p => p[0] <= cutoff);
+  return past && past[1] > 0 ? v.current / past[1] - 1 : null;
+}
+function chgSpan(c, label) {
+  if (c == null) return "";
+  const pctTxt = Math.abs(c) >= 0.1 ? Math.round(Math.abs(c) * 100).toLocaleString() : (Math.abs(c) * 100).toFixed(1);
+  return `<span class="${c >= 0 ? "up" : "down"}">${c >= 0 ? "▲" : "▼"}${pctTxt}% ${label}</span>`;
+}
+function sparkline(v) {
+  const h = v.history;
+  if (!h || h.length < 2) return "";
+  const ys = h.map(p => p[1]), lo = Math.min(...ys), hi = Math.max(...ys), t0 = h[0][0], t1 = h.at(-1)[0];
+  const pts = h.map(([t, y]) => `${((t - t0) / (t1 - t0 || 1) * 100).toFixed(2)},${(30 - (y - lo) / (hi - lo || 1) * 28 - 1).toFixed(2)}`).join(" ");
+  const tip = `${v.company}: ${fmtVal(h[0][1], "money")} on ${new Date(t0 * 1000).toLocaleDateString()} → ${fmtVal(v.current, "money")} now`;
+  return `<svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-label="${esc(tip)}"><title>${esc(tip)}</title><polyline points="${pts}"/></svg>`;
+}
+function renderValuations(q) {
+  const el = document.getElementById("vals");
+  const byCompany = new Map();
+  for (const e of [...events].sort((a, b) => b.vol - a.vol)) {
+    const v = valuations.get(e.id);
+    if (v && !byCompany.has(v.company)) byCompany.set(v.company, { v, e });
+  }
+  const show = (section === "all" || section === "valuation") && byCompany.size;
+  const items = [...byCompany.values()]
+    .filter(({ v, e }) => !q || `${v.company} ${e.title}`.toLowerCase().includes(q))
+    .sort((a, b) => b.v.current - a.v.current);
+  el.innerHTML = show && items.length ? `<h2>Current private valuations</h2><div class="tiles">${items.map(({ v, e }) => {
+    const by = (e.title.match(/\bby ([^?]+)\?/i) || [])[1];
+    return `<div class="tile val-tile" title="${esc(`${v.company} valuation (Nasdaq Private Market)`)}">
+      <a class="cover" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" aria-label="${esc(e.title)}"></a>
+      <div class="co">${esc(v.company)}</div>
+      <div class="big">${fmtVal(v.current, "money")}</div>
+      <div class="chgs">${chgSpan(valChange(v, 30), "30d")}${chgSpan(valChange(v, 365), "1y")}</div>
+      ${sparkline(v)}
+      ${e.headline.kind === "Best guess" ? `<div class="sub">Market's best guess${by ? ` by ${esc(by)}` : ""}: <b>${esc(e.headline.big)}</b></div>` : ""}
+    </div>`;
+  }).join("")}</div>` : "";
 }
 
 function renderChips() {
@@ -543,6 +619,7 @@ function card(e) {
       </div>
       ${starBtn(e)}
     </div>
+    ${valuations.has(e.id) ? (v => `<div class="now">Now: <b>${fmtVal(v.current, "money")}</b> <span class="chgs">${chgSpan(valChange(v, 30), "30d")}</span>${sparkline(v)}</div>`)(valuations.get(e.id)) : ""}
     ${e.markets.length > 1 ? `<div class="headline ${e.headline.kind === "Best guess" ? "est" : ""}"><span class="k">${e.headline.kind}</span> <b>${esc(e.headline.big)}</b><div class="hsub">${esc(e.headline.sub)}</div></div>` : ""}
     <div class="rows">${rows.slice(0, SHOW).join("")}<div class="hidden" hidden>${rows.slice(SHOW).join("")}</div></div>
     ${rows.length > SHOW ? `<button class="more">Show ${rows.length - SHOW} more</button>` : ""}
@@ -552,6 +629,7 @@ function card(e) {
 function render() {
   renderChips();
   const q = document.getElementById("q").value.trim().toLowerCase();
+  renderValuations(q);
   const minVol = Number(document.getElementById("minvol").value);
   const starView = section === "starred";
   const list = events

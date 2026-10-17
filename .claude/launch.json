@@ -4,7 +4,9 @@
     {
       "name": "ai-dashboard",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "3003", "--directory", "ai-dashboard"],
+      "runtimeArgs": [
+        "server.py"
+      ],
       "port": 3003
     }
   ]

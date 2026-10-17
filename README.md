@@ -2,7 +2,7 @@
 
 A local dashboard of live AI-related [Polymarket](https://polymarket.com) markets: model release dates, AI IPOs, valuations, benchmarks and more. Groups of related bets (e.g. "released by Oct 24 / Oct 31 / Dec 31") are condensed into a single best-guess number.
 
-Data comes straight from Polymarket's free public Gamma API in the browser. No API key and no build step; refreshes every 60 seconds.
+Market data comes from Polymarket's free public Gamma API (no API key, no build step) and refreshes every 60 seconds. Current private valuations (Nasdaq Private Market data shown on Polymarket's "valuation hit" pages) aren't in the public API, so `server.py` reads them from those pages and caches them for 15 minutes.
 
 ## Run
 
@@ -12,11 +12,13 @@ Data comes straight from Polymarket's free public Gamma API in the browser. No A
 
 Then open http://localhost:3003.
 
-Or without the script:
+Or directly:
 
 ```bash
-python3 -m http.server 3003 --directory ai-dashboard
+python3 server.py
 ```
+
+Needs only Python 3's standard library.
 
 ## How the best guesses work
 
