@@ -86,6 +86,9 @@
   }
   .star:hover { color: var(--text-primary); }
   .star.on { color: #eda100; }
+  .tile[draggable="true"] { cursor: grab; }
+  .tile.dragging { opacity: 0.35; }
+  h2 .hint { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 12px; color: var(--text-muted); margin-left: 8px; }
   .tile .star { position: absolute; top: 10px; right: 10px; z-index: 1; }
   .tile:hover, .card:hover { border-color: var(--text-muted); }
   .tile .label { color: var(--text-secondary); font-size: 12px; min-height: 2.8em; }
@@ -181,9 +184,11 @@ let valuations = new Map(); // event id → { company, current, history: [[unixS
 const STAR_KEY = "ai-odds-board:starred";
 let starred = new Set();
 try { starred = new Set(JSON.parse(localStorage.getItem(STAR_KEY) || "[]")); } catch {}
+// The Set's insertion order is the user's chosen order on the Starred page.
+const saveStars = () => { try { localStorage.setItem(STAR_KEY, JSON.stringify([...starred])); } catch {} };
 function toggleStar(id) {
   starred.has(id) ? starred.delete(id) : starred.add(id);
-  try { localStorage.setItem(STAR_KEY, JSON.stringify([...starred])); } catch {}
+  saveStars();
   render();
 }
 const starBtn = e => {
@@ -626,7 +631,10 @@ function card(e) {
   </article>`;
 }
 
+let dragId = null, renderPending = false;
 function render() {
+  // A background refresh mid-drag would yank the tiles out from under the pointer.
+  if (dragId) { renderPending = true; return; }
   renderChips();
   const q = document.getElementById("q").value.trim().toLowerCase();
   renderValuations(q);
@@ -637,15 +645,20 @@ function render() {
     .filter(e => !q || `${e.title} ${e.markets.map(m => m.label).join(" ")}`.toLowerCase().includes(q))
     .filter(e => section === "all" || starView || e.sec === section)
     .sort((a, b) => b.vol - a.vol);
+  if (starView) {
+    const order = [...starred];
+    list.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  }
 
   // Headline tiles: the top few by 24h volume, favouring release dates and IPOs.
   const weight = e => (e.vol24 + e.vol / 30) * (e.headline.kind === "Best guess" ? 4 : 1) * (e.sec === "releases" || e.sec === "ipo" || e.sec === "valuation" ? 2 : 1);
   const tiles = starView ? list : [...list].sort((a, b) => weight(b) - weight(a)).slice(0, 12);
-  document.getElementById("tiles-title").textContent = starView ? "Starred bets" : "Best guesses";
+  document.getElementById("tiles-title").innerHTML = starView
+    ? `Starred bets${tiles.length > 1 ? `<span class="hint">drag to reorder</span>` : ""}` : "Best guesses";
   const empty = starView ? "No starred bets yet. Click ☆ on any bet to pin it here." : "No markets match.";
   document.getElementById("tiles").innerHTML = tiles.length ? tiles.map(e => `
-    <div class="tile" title="${esc(e.title)}">
-      <a class="cover" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" aria-label="${esc(e.title)}"></a>
+    <div class="tile" title="${esc(e.title)}" data-id="${esc(e.id)}"${starView ? ` draggable="true"` : ""}>
+      <a class="cover" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" aria-label="${esc(e.title)}" draggable="false"></a>
       ${starBtn(e)}
       <div class="label">${esc(e.title)}</div>
       <div class="kind ${e.headline.kind === "Best guess" ? "est" : ""}">${e.headline.kind}</div>
@@ -681,6 +694,39 @@ document.getElementById("theme").onclick = () => {
   applyTheme();
 };
 applyTheme();
+
+// Drag-and-drop reordering of Starred tiles: move the tile live while dragging,
+// then save the new DOM order as the star order.
+const tilesEl = document.getElementById("tiles");
+tilesEl.addEventListener("dragstart", ev => {
+  const t = ev.target.closest?.(".tile[draggable=true]");
+  if (!t) return;
+  dragId = t.dataset.id;
+  t.classList.add("dragging");
+  ev.dataTransfer.effectAllowed = "move";
+  ev.dataTransfer.setData("text/plain", dragId);
+});
+tilesEl.addEventListener("dragover", ev => {
+  if (!dragId) return;
+  ev.preventDefault();
+  const dragged = tilesEl.querySelector(".tile.dragging");
+  const over = ev.target.closest(".tile");
+  if (!dragged || !over || over === dragged) return;
+  const r = over.getBoundingClientRect();
+  const after = ev.clientX > r.left + r.width / 2;
+  over.parentNode.insertBefore(dragged, after ? over.nextSibling : over);
+});
+tilesEl.addEventListener("drop", ev => { if (dragId) ev.preventDefault(); });
+tilesEl.addEventListener("dragend", () => {
+  if (!dragId) return;
+  const shown = [...tilesEl.querySelectorAll(".tile")].map(t => t.dataset.id);
+  // Starred bets hidden by search keep their place at the end.
+  starred = new Set([...shown, ...[...starred].filter(id => !shown.includes(id))]);
+  saveStars();
+  dragId = null;
+  renderPending = false;
+  render();
+});
 
 document.addEventListener("click", ev => {
   const b = ev.target.closest("[data-star]");
