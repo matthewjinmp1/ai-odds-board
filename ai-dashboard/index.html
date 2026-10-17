@@ -588,18 +588,17 @@ function render() {
   });
 }
 
-// Theme: Auto (follow the OS) → Light → Dark, remembered in this browser.
+// Theme: Light ⇄ Dark, remembered in this browser. First visit follows the OS setting.
 const THEME_KEY = "ai-odds-board:theme";
-const THEMES = { auto: "◐ Auto", light: "☀ Light", dark: "☾ Dark" };
-let theme = "auto";
-try { theme = localStorage.getItem(THEME_KEY) || "auto"; } catch {}
+let theme = null;
+try { theme = localStorage.getItem(THEME_KEY); } catch {}
+if (theme !== "light" && theme !== "dark") theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 function applyTheme() {
-  if (theme === "auto") delete document.documentElement.dataset.theme;
-  else document.documentElement.dataset.theme = theme;
-  document.getElementById("theme").textContent = THEMES[theme];
+  document.documentElement.dataset.theme = theme;
+  document.getElementById("theme").textContent = theme === "dark" ? "☾ Dark" : "☀ Light";
 }
 document.getElementById("theme").onclick = () => {
-  theme = { auto: "light", light: "dark", dark: "auto" }[theme] || "auto";
+  theme = theme === "dark" ? "light" : "dark";
   try { localStorage.setItem(THEME_KEY, theme); } catch {}
   applyTheme();
 };
