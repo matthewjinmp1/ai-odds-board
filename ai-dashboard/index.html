@@ -87,7 +87,8 @@
   .star:hover { color: var(--text-primary); }
   .star.on { color: #eda100; }
   .tile[draggable="true"] { cursor: grab; }
-  .tile.dragging { opacity: 0.35; }
+  .tile.dragging, .card.dragging { opacity: 0.35; }
+  .card[draggable="true"] { cursor: grab; }
   h2 .hint { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 12px; color: var(--text-muted); margin-left: 8px; }
   .tile .star { position: absolute; top: 10px; right: 10px; z-index: 1; }
   .tile:hover, .card:hover { border-color: var(--text-muted); }
@@ -157,7 +158,7 @@
 <main>
   <div id="vals"></div>
   <h2 id="tiles-title">Best guesses</h2>
-  <div class="tiles" id="tiles"></div>
+  <div class="tiles" id="tiles" data-reorder></div>
   <div id="sections"></div>
 </main>
 
@@ -615,11 +616,12 @@ function card(e) {
   const SHOW = 6;
   const url = `https://polymarket.com/event/${e.slug}`;
   const rows = e.markets.map(row);
-  return `<article class="card">
+  const drag = section === "starred";
+  return `<article class="card" data-id="${esc(e.id)}"${drag ? ` draggable="true"` : ""}>
     <div class="card-head">
-      ${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy">` : ""}
+      ${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false">` : ""}
       <div>
-        <a href="${url}" target="_blank" rel="noopener">${esc(e.title)}</a>
+        <a href="${url}" target="_blank" rel="noopener" draggable="false">${esc(e.title)}</a>
         <div class="meta">${fmtUSD(e.vol)} vol · ${fmtUSD(e.vol24)} 24h${e.end ? ` · ends ${new Date(e.end).toLocaleDateString()}` : ""}</div>
       </div>
       ${starBtn(e)}
@@ -669,7 +671,8 @@ function render() {
   document.getElementById("sections").innerHTML = SECTIONS.map(s => {
     const items = list.filter(e => e.sec === s.id);
     if (!items.length) return "";
-    return `<h2>${esc(s.name)} <span class="count">${items.length}</span></h2><div class="grid">${items.map(card).join("")}</div>`;
+    const hint = starView && items.length > 1 ? `<span class="hint">drag to reorder</span>` : "";
+    return `<h2>${esc(s.name)} <span class="count">${items.length}</span>${hint}</h2><div class="grid"${starView ? " data-reorder" : ""}>${items.map(card).join("")}</div>`;
   }).join("");
 
   document.querySelectorAll(".more").forEach(b => b.onclick = () => {
@@ -695,35 +698,39 @@ document.getElementById("theme").onclick = () => {
 };
 applyTheme();
 
-// Drag-and-drop reordering of Starred tiles: move the tile live while dragging,
-// then save the new DOM order as the star order.
-const tilesEl = document.getElementById("tiles");
-tilesEl.addEventListener("dragstart", ev => {
-  const t = ev.target.closest?.(".tile[draggable=true]");
-  if (!t) return;
-  dragId = t.dataset.id;
-  t.classList.add("dragging");
+// Drag-and-drop reordering on the Starred page, for the tiles and for the cards in each
+// section. Items move live while dragging; on drop the container's new order is written
+// back into the star order (other starred bets keep their positions).
+const mainEl = document.querySelector("main");
+let dragBox = null;
+mainEl.addEventListener("dragstart", ev => {
+  const item = ev.target.closest?.("[data-reorder] > [draggable=true]");
+  if (!item) return;
+  dragId = item.dataset.id;
+  dragBox = item.parentNode;
+  item.classList.add("dragging");
   ev.dataTransfer.effectAllowed = "move";
   ev.dataTransfer.setData("text/plain", dragId);
 });
-tilesEl.addEventListener("dragover", ev => {
+mainEl.addEventListener("dragover", ev => {
   if (!dragId) return;
+  const over = ev.target.closest("[data-reorder] > [data-id]");
+  if (!over || over.parentNode !== dragBox) return;
   ev.preventDefault();
-  const dragged = tilesEl.querySelector(".tile.dragging");
-  const over = ev.target.closest(".tile");
-  if (!dragged || !over || over === dragged) return;
+  const dragged = dragBox.querySelector(".dragging");
+  if (!dragged || over === dragged) return;
   const r = over.getBoundingClientRect();
-  const after = ev.clientX > r.left + r.width / 2;
-  over.parentNode.insertBefore(dragged, after ? over.nextSibling : over);
+  dragBox.insertBefore(dragged, ev.clientX > r.left + r.width / 2 ? over.nextSibling : over);
 });
-tilesEl.addEventListener("drop", ev => { if (dragId) ev.preventDefault(); });
-tilesEl.addEventListener("dragend", () => {
+mainEl.addEventListener("drop", ev => { if (dragId) ev.preventDefault(); });
+mainEl.addEventListener("dragend", () => {
   if (!dragId) return;
-  const shown = [...tilesEl.querySelectorAll(".tile")].map(t => t.dataset.id);
-  // Starred bets hidden by search keep their place at the end.
-  starred = new Set([...shown, ...[...starred].filter(id => !shown.includes(id))]);
+  const shown = [...dragBox.children].map(el => el.dataset.id).filter(Boolean);
+  const inBox = new Set(shown);
+  let k = 0;
+  starred = new Set([...starred].map(id => inBox.has(id) ? shown[k++] : id));
   saveStars();
-  dragId = null;
+  dragId = dragBox = null;
   renderPending = false;
   render();
 });
