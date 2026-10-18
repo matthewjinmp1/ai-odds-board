@@ -133,6 +133,8 @@
   .now { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-secondary); }
   .now b { color: var(--text-primary); }
   .now .spark { width: 110px; height: 24px; margin: 0; margin-left: auto; }
+  .away { font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-left: 8px; white-space: nowrap; }
+  .tile .big .away { font-size: 14px; }
   .conf { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; position: relative; z-index: 1; cursor: help; }
   .headline .conf { margin-left: 10px; }
   .tile .conf { margin: 4px 0 2px; }
@@ -436,6 +438,15 @@ function confBadge(c) {
   return `<span class="conf" title="${esc(confTip(c))}"><span class="meter"><span style="width:${v}%"></span></span>${v}% confidence</span>`;
 }
 
+// "in 4 days" for a date estimate, counted in calendar days.
+function awayText(h) {
+  if (h?.when == null) return "";
+  const day = ms => { const d = new Date(ms); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+  const n = Math.round((day(h.when) - day(Date.now())) / DAY);
+  const t = n === 0 ? "today" : n === 1 ? "tomorrow" : n < 0 ? `${-n} days ago` : `in ${h.after ? "over " : ""}${n.toLocaleString()} days`;
+  return `<span class="away">${t}</span>`;
+}
+
 const bigNum = (c, f) => c.bound === "lo" ? `< ${f(c.x)}` : c.bound === "hi" ? `> ${f(c.x)}` : `~${f(c.x)}`;
 
 // Headline + explanation for a date estimate, including extrapolated ones.
@@ -445,9 +456,9 @@ function dateResult(pts, f, t0, lastP, lastX, n) {
     coverage: coverageOf(med), n, consistency: consistencyOf(pts),
     precision: precisionOf(pts, { t0 }, med.x, Math.max(Math.abs(med.x - Date.now()), 30 * DAY)),
   };
-  if (med.bound === "hi") return { big: `After ${f(med.x)}`, sub: `only ${pct(lastP)} chance by then`, conf };
+  if (med.bound === "hi") return { big: `After ${f(med.x)}`, sub: `only ${pct(lastP)} chance by then`, conf, when: med.x, after: true };
   const note = med.extrap ? `extrapolated: ${pct(lastP)} by ${f(lastX)}, same pace after` : "best-guess date (50/50)";
-  return { big: med.extrap ? `~${f(med.x)}` : f(med.x), sub: `${note}${rangeText(pts, f, { t0 })}`, conf };
+  return { big: med.extrap ? `~${f(med.x)}` : f(med.x), sub: `${note}${rangeText(pts, f, { t0 })}`, conf, when: med.x };
 }
 
 // "Released by Oct 31?" ladders: each market is P(happens by that date), i.e. a CDF over time.
@@ -718,7 +729,7 @@ function card(e) {
       ${starBtn(e)}
     </div>
     ${valuations.has(e.id) ? (v => `<div class="now">Now: <b>${fmtVal(v.current, "money")}</b> <span class="chgs">${chgSpan(valChange(v, 30), "30d")}</span>${sparkline(v)}</div>`)(valuations.get(e.id)) : ""}
-    ${e.markets.length > 1 ? `<div class="headline ${e.headline.kind === "Best guess" ? "est" : ""}"><span class="k">${e.headline.kind}</span> <b>${esc(e.headline.big)}</b>${confBadge(e.headline.conf)}<div class="hsub">${esc(e.headline.sub)}</div></div>` : ""}
+    ${e.markets.length > 1 ? `<div class="headline ${e.headline.kind === "Best guess" ? "est" : ""}"><span class="k">${e.headline.kind}</span> <b>${esc(e.headline.big)}</b>${awayText(e.headline)}${confBadge(e.headline.conf)}<div class="hsub">${esc(e.headline.sub)}</div></div>` : ""}
     <div class="rows">${rows.slice(0, SHOW).join("")}<div class="hidden" hidden>${rows.slice(SHOW).join("")}</div></div>
     ${rows.length > SHOW ? `<button class="more">Show ${rows.length - SHOW} more</button>` : ""}
   </article>`;
@@ -755,7 +766,7 @@ function render() {
       ${starBtn(e)}
       <div class="tile-head">${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false">` : ""}<div class="label">${esc(e.title)}</div></div>
       <div class="kind ${e.headline.kind === "Best guess" ? "est" : ""}">${e.headline.kind}</div>
-      <div class="big">${esc(e.headline.big)}</div>
+      <div class="big">${esc(e.headline.big)}${awayText(e.headline)}</div>
       ${confBadge(e.headline.conf)}
       <div class="sub">${esc(e.headline.sub)}</div>
     </div>`).join("") : `<div class="empty">${empty}</div>`;
