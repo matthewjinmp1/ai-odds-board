@@ -443,7 +443,12 @@ function awayText(h) {
   if (h?.when == null) return "";
   const day = ms => { const d = new Date(ms); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
   const n = Math.round((day(h.when) - day(Date.now())) / DAY);
-  const t = n === 0 ? "today" : n === 1 ? "tomorrow" : n < 0 ? `${-n} days ago` : `in ${h.after ? "over " : ""}${n.toLocaleString()} days`;
+  // Over a month → months, over a year → years, to one decimal ("in 1.4 months", "in 2 years").
+  const span = d => {
+    const unit = (v, w) => `${trim1(v)} ${w}${trim1(v) === "1" ? "" : "s"}`;
+    return d > 365 ? unit(d / 365.25, "year") : d > 30 ? unit(d / 30.44, "month") : unit(d, "day");
+  };
+  const t = n === 0 ? "today" : n === 1 ? "tomorrow" : n < 0 ? `${span(-n)} ago` : `in ${h.after ? "over " : ""}${span(n)}`;
   return `<span class="away">${t}</span>`;
 }
 
