@@ -20,6 +20,14 @@ python3 server.py
 
 Needs only Python 3's standard library.
 
+### Keep it running in the background (macOS)
+
+```bash
+./install-service.sh
+```
+
+Starts the server at login and restarts it if it crashes. Restart it after pulling changes with `launchctl kickstart -k gui/$(id -u)/com.matthewjinmp1.ai-odds-board`; remove it with `./install-service.sh uninstall`. Logs go to `~/Library/Logs/ai-odds-board.log`.
+
 ## How the best guesses work
 
 - **"By date" ladders** (each market = P(happens by date)): treated as a cumulative distribution; the best guess is the date where it crosses 50%.
