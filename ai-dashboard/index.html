@@ -195,7 +195,14 @@
 
 <script>
 const API = "https://gamma-api.polymarket.com";
-const TAGS = ["ai", "openai", "anthropic", "claude", "gemini", "google", "xai", "nvidia"];
+// Polymarket tags that are AI by definition: every active event in them is kept.
+const AI_TAGS = ["ai", "openai", "anthropic", "claude", "xai", "chatgpt", "deepseek", "grok", "llm", "ai-regulation",
+  "ai-safety", "compute", "artificial-intelligence", "humanoid", "robot", "optimus", "self-driving", "sam-altman"];
+// Broad tags that contain some AI events: only events whose title looks AI-related are kept.
+const BROAD_TAGS = ["gemini", "google", "nvidia", "tech", "big-tech", "business", "ipos", "privates", "elon-musk"];
+// Free-text searches catch AI bets filed under unrelated tags (e.g. an AI executive order under politics).
+const SEARCHES = ["AI", "artificial intelligence", "AGI", "superintelligence", "data center", "humanoid robot", "LLM",
+  "AI executive order", "AI bill", "AI regulation", "AI chips", "AI model"];
 const REFRESH_MS = 60_000;
 
 // First match wins, so order matters.
@@ -206,7 +213,7 @@ const SECTIONS = [
   { id: "bench", name: "Best model & benchmarks", re: /best ai model|arena|humanity|benchmark|score|openrouter|millennium|#1 ai|top ai/i },
   { id: "other", name: "Everything else AI", re: /./ },
 ];
-const AI_WORDS = /\b(ai|a\.i\.|agi|openai|anthropic|claude|fable|opus|sonnet|haiku|gpt|chatgpt|gemini|deepmind|grok|xai|llama|meta ai|deepseek|qwen|mistral|nvidia|data center|chatbot|llm|model|databricks|perplexity|lambda|anysphere|cursor|cohere|scale ai|cerebras|coreweave|groq|thinking machines|safe superintelligence|ssi|moonshot|kimi|minimax|z\.ai|figure ai)\b/i;
+const AI_WORDS = /\b(ai|a\.i\.|agi|openai|anthropic|claude|fable|opus|sonnet|haiku|gpt|chatgpt|gemini|deepmind|grok|xai|llama|meta ai|deepseek|qwen|mistral|nvidia|data centers?|chatbots?|llms?|models?|robots?|robotics|humanoids?|optimus|self-driving|robotaxis?|waymo|gpus?|[abh]\d00|superintelligence|databricks|perplexity|lambda|anysphere|cursor|cohere|scale ai|cerebras|coreweave|groq|thinking machines|safe superintelligence|ssi|moonshot|kimi|minimax|z\.ai|figure ai)\b/i;
 
 let events = [];
 let section = "all";
@@ -242,6 +249,11 @@ async function fetchTag(tag) {
     if (page.length < 100) break;
   }
   return out;
+}
+
+async function searchEvents(q) {
+  const r = await fetch(`${API}/public-search?q=${encodeURIComponent(q)}&limit_per_type=50&events_status=active`);
+  return r.ok ? ((await r.json()).events || []) : [];
 }
 
 function yesPrice(m) {
@@ -635,15 +647,18 @@ function prepare(e) {
 async function load() {
   const status = document.getElementById("status");
   try {
-    const lists = await Promise.all(TAGS.map(t => fetchTag(t).catch(() => [])));
+    const [aiLists, broadLists, searchLists] = await Promise.all([
+      Promise.all(AI_TAGS.map(t => fetchTag(t).catch(() => []))),
+      Promise.all(BROAD_TAGS.map(t => fetchTag(t).catch(() => []))),
+      Promise.all(SEARCHES.map(q => searchEvents(q).catch(() => []))),
+    ]);
     const seen = new Map();
-    for (const e of lists.flat()) {
-      if (seen.has(e.id)) continue;
-      // Broad tags (google, nvidia) pull in non-AI markets; keep only AI-ish ones from those.
-      if (!AI_WORDS.test(`${e.title} ${e.description || ""}`.slice(0, 600))) continue;
-      const p = prepare(e);
-      if (p) seen.set(e.id, p);
-    }
+    const add = e => { if (!seen.has(e.id)) { const p = prepare(e); if (p) seen.set(e.id, p); } };
+    aiLists.flat().forEach(add);
+    // Broad tags and fuzzy search results: keep only events whose title looks AI-related.
+    [...broadLists.flat(), ...searchLists.flat()]
+      .filter(e => !e.closed && e.active !== false && AI_WORDS.test(e.title))
+      .forEach(add);
     events = [...seen.values()];
     status.textContent = `${events.length} markets · updated ${new Date().toLocaleTimeString()}`;
     render();
@@ -805,7 +820,8 @@ function render() {
   const list = events
     .filter(e => starView ? starred.has(e.id) : e.vol >= minVol)
     .filter(e => !q || `${e.title} ${e.markets.map(m => m.label).join(" ")}`.toLowerCase().includes(q))
-    .filter(e => section === "all" || starView || e.sec === section)
+    // A search looks across every category, not just the selected one.
+    .filter(e => section === "all" || starView || q || e.sec === section)
     .sort((a, b) => b.vol - a.vol);
   if (starView) {
     const order = [...starred];
