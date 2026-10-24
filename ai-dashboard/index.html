@@ -348,13 +348,18 @@ function fmtDate(ms, coarse) {
     : { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
 }
 
-// Where a piecewise-linear CDF (points sorted by x, y non-decreasing) reaches probability q.
-function crossing(pts, q) {
+// Where a CDF (points sorted by x, y non-decreasing) reaches probability q.
+// Numbers: linear between points. Dates (hazard): a steady daily chance between points, i.e.
+// log(1 − y) is linear, so a long gap isn't treated as an ever-rising daily chance.
+function crossing(pts, q, hazard) {
   if (pts[0].y >= q) return { x: pts[0].x, bound: "lo" };
   for (let i = 1; i < pts.length; i++) {
     if (pts[i].y >= q) {
       const a = pts[i - 1], b = pts[i];
-      return { x: a.x + (q - a.y) / (b.y - a.y || 1) * (b.x - a.x) };
+      const frac = hazard && b.y < 1
+        ? Math.log((1 - a.y) / (1 - q)) / Math.log((1 - a.y) / (1 - b.y))
+        : (q - a.y) / (b.y - a.y || 1);
+      return { x: a.x + frac * (b.x - a.x) };
     }
   }
   return { x: pts.at(-1).x, bound: "hi" };
@@ -388,7 +393,7 @@ function invNorm(p) {
 // Numbers: fit a normal curve through all the points (log scale for money) and read q off it.
 const MAX_EXTRAP = 10 * 365 * DAY;
 function quantile(pts, q, { t0, log } = {}) {
-  const c = crossing(pts, q);
+  const c = crossing(pts, q, t0 != null);
   if (!c.bound) return c;
   if (t0 != null) {
     const last = pts.at(-1);
