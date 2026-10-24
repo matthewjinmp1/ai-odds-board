@@ -47,6 +47,7 @@
     --down: #e66767;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body {
     margin: 0; background: var(--surface-0); color: var(--text-primary);
     font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
@@ -135,6 +136,24 @@
   .now .spark { width: 110px; height: 24px; margin: 0; margin-left: auto; }
   .away { font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-left: 8px; white-space: nowrap; }
   .tile .big .away { font-size: 14px; }
+  .timeline { display: flex; flex-direction: column; gap: 6px; }
+  .tl-month { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin: 14px 0 2px; }
+  .tl-row {
+    position: relative; display: grid; grid-template-columns: 210px 32px minmax(0, 1fr) 150px 24px; gap: 14px; align-items: center;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px;
+  }
+  .tl-row:hover { border-color: var(--text-muted); }
+  .tl-row .cover { position: absolute; inset: 0; border-radius: inherit; }
+  .tl-row img { width: 32px; height: 32px; border-radius: 7px; object-fit: cover; }
+  .tl-date b { font-size: 16px; }
+  .tl-date .away { display: block; margin: 2px 0 0; font-size: 12px; }
+  .tl-title { font-weight: 600; min-width: 0; }
+  .tl-sub { font-weight: 400; font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tl-row .star { position: relative; z-index: 1; }
+  @media (max-width: 700px) {
+    .tl-row { grid-template-columns: 110px 28px minmax(0, 1fr) 24px; }
+    .tl-row .conf { display: none; }
+  }
   .conf { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; position: relative; z-index: 1; cursor: help; }
   .headline .conf { margin-left: 10px; }
   .tile .conf { margin: 4px 0 2px; }
@@ -701,7 +720,10 @@ function renderValuations(q) {
 function renderChips() {
   const el = document.getElementById("chips");
   const nStar = events.filter(e => starred.has(e.id)).length;
-  const opts = [{ id: "all", name: "All" }, { id: "starred", name: `★ Starred${nStar ? ` (${nStar})` : ""}` }, ...SECTIONS];
+  const opts = [
+    { id: "all", name: "All" }, { id: "starred", name: `★ Starred${nStar ? ` (${nStar})` : ""}` },
+    { id: "timeline", name: "Timeline" }, { id: "starred-timeline", name: "★ Timeline" }, ...SECTIONS,
+  ];
   el.innerHTML = opts.map(s => `<button class="chip ${s.id === section ? "on" : ""}" data-id="${s.id}">${esc(s.name)}</button>`).join(" ");
   el.querySelectorAll(".chip").forEach(b => b.onclick = () => { section = b.dataset.id; render(); });
 }
@@ -741,6 +763,34 @@ function card(e) {
 }
 
 let dragId = null, renderPending = false;
+// Timeline: every bet whose best guess is a date, soonest first, grouped by month.
+function renderTimeline(q, minVol, onlyStarred) {
+  const items = events
+    .filter(e => e.headline.when != null)
+    .filter(e => onlyStarred ? starred.has(e.id) : e.vol >= minVol)
+    .filter(e => !q || `${e.title} ${e.markets.map(m => m.label).join(" ")}`.toLowerCase().includes(q))
+    .sort((a, b) => a.headline.when - b.headline.when);
+  const el = document.getElementById("sections");
+  if (!items.length) {
+    el.innerHTML = `<div class="empty">${onlyStarred ? "None of your starred bets has a predicted date yet. Star date bets (releases, IPOs…) to see them here." : "No dated bets match."}</div>`;
+    return;
+  }
+  let month = null, html = `<h2>${onlyStarred ? "Starred timeline" : "Timeline"} <span class="count">${items.length}</span><span class="hint">soonest predicted first</span></h2><div class="timeline">`;
+  for (const e of items) {
+    const h = e.headline, m = new Date(h.when).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    if (m !== month) { month = m; html += `<div class="tl-month">${m}</div>`; }
+    html += `<div class="tl-row" title="${esc(e.title)}">
+      <a class="cover" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" aria-label="${esc(e.title)}"></a>
+      <div class="tl-date"><b>${esc(h.big)}</b>${awayText(h)}</div>
+      ${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy">` : `<span></span>`}
+      <div class="tl-title">${esc(e.title)}<div class="tl-sub">${esc(h.sub)}</div></div>
+      ${confBadge(h.conf)}
+      ${starBtn(e)}
+    </div>`;
+  }
+  el.innerHTML = html + `</div>`;
+}
+
 function render() {
   // A background refresh mid-drag would yank the tiles out from under the pointer.
   if (dragId) { renderPending = true; return; }
@@ -748,6 +798,9 @@ function render() {
   const q = document.getElementById("q").value.trim().toLowerCase();
   renderValuations(q);
   const minVol = Number(document.getElementById("minvol").value);
+  const timeline = section === "timeline" || section === "starred-timeline";
+  document.getElementById("tiles-title").hidden = document.getElementById("tiles").hidden = timeline;
+  if (timeline) return renderTimeline(q, minVol, section === "starred-timeline");
   const starView = section === "starred";
   const list = events
     .filter(e => starView ? starred.has(e.id) : e.vol >= minVol)
