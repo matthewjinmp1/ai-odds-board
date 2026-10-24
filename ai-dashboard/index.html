@@ -801,7 +801,7 @@ function renderTimeline(q, minVol, onlyStarred) {
     if (m !== month) { month = m; html += `<div class="tl-month">${m}</div>`; }
     html += `<div class="tl-row" title="${esc(e.title)}">
       <a class="cover" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" aria-label="${esc(e.title)}"></a>
-      <div class="tl-date"><b>${esc(h.big)}</b>${awayText(h)}</div>
+      <div class="tl-date"><b>${esc(h.big.replace(/^~/, ""))}</b>${awayText(h)}</div>
       ${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy">` : `<span></span>`}
       <div class="tl-title">${esc(e.title)}<div class="tl-sub">${esc(h.sub)}</div></div>
       ${confBadge(h.conf)}
