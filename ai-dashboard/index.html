@@ -59,6 +59,10 @@
     display: flex; flex-direction: column; gap: 6px;
   }
   .hbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .srcseg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface-1); }
+  .srcseg button { font: inherit; font-size: 13px; background: none; border: none; color: var(--text-secondary); padding: 5px 10px; cursor: pointer; }
+  .srcseg button + button { border-left: 1px solid var(--border); }
+  .srcseg button[aria-pressed="true"] { background: var(--text-primary); color: var(--surface-1); }
   h1 { font-size: 18px; margin: 0 8px 0 0; }
   #chips { display: flex; flex-wrap: wrap; gap: 6px; }
   input[type=search], select {
@@ -169,6 +173,9 @@
   <div class="hbar">
     <h1>AI Odds Board</h1>
     <input type="search" id="q" placeholder="Search markets (e.g. Claude, IPO, Gemini)">
+    <div class="srcseg" id="sourceSeg" role="group" aria-label="Source">
+      <button data-source="all">All sources</button><button data-source="polymarket">Polymarket</button><button data-source="kalshi">Kalshi</button>
+    </div>
     <select id="minvol" title="Minimum total volume">
       <option value="0">Any volume</option>
       <option value="10000" selected>$10k+ volume</option>
@@ -214,6 +221,15 @@ const AI_WORDS = /\b(ai|a\.i\.|agi|openai|anthropic|claude|fable|opus|sonnet|hai
 
 let events = [];
 let section = "all";
+let source = "all";  // "all", "polymarket" or "kalshi"
+// Your tab, source and volume filter are remembered in this browser (ranking has its own key).
+const VIEW_KEY = "ai-odds-board:view";
+const savedView = (() => { try { return JSON.parse(localStorage.getItem(VIEW_KEY)) || {}; } catch { return {}; } })();
+if (savedView.section) section = savedView.section;
+if (["all", "polymarket", "kalshi"].includes(savedView.source)) source = savedView.source;
+const saveView = () => {
+  try { localStorage.setItem(VIEW_KEY, JSON.stringify({ section, source, minVol: document.getElementById("minvol").value })); } catch {}
+};
 let valuations = new Map(); // event id → { company, current, history: [[unixSec, value]], source }
 
 // Starred bets live in this browser's localStorage, keyed by Polymarket event id.
@@ -748,8 +764,11 @@ function renderChips() {
     { id: "all", name: "All" }, { id: "starred", name: `★ Starred${nStar ? ` (${nStar})` : ""}` },
     ...SECTIONS, { id: VALS_TAB, name: "Private valuations" },
   ];
+  // A remembered tab that no longer exists (e.g. the old Timeline tab) falls back to All.
+  if (!opts.some(o => o.id === section)) section = "all";
   el.innerHTML = opts.map(s => `<button class="chip ${s.id === section ? "on" : ""}" data-id="${s.id}">${esc(s.name)}</button>`).join(" ");
-  el.querySelectorAll(".chip").forEach(b => b.onclick = () => { section = b.dataset.id; render(); });
+  el.querySelectorAll(".chip").forEach(b => b.onclick = () => { section = b.dataset.id; saveView(); render(); });
+  for (const b of document.querySelectorAll("#sourceSeg [data-source]")) b.setAttribute("aria-pressed", String(b.dataset.source === source));
   // Second row: how to order the bets in the chosen tab.
   const ranks = [["standard", "Standard"], ["importance", "Importance"], ["confidence", "Confidence"], ["timeline", "Timeline"], ["volume", "Volume"]];
   const rk = document.getElementById("ranks");
@@ -887,6 +906,7 @@ function render() {
   const ranked = rank !== "standard" && RANKS[rank];
   document.getElementById("tiles-title").hidden = document.getElementById("tiles").hidden = !!ranked;
   const list = events
+    .filter(e => source === "all" || e.source === source)
     .filter(e => starView ? starred.has(e.id) : e.vol >= minVol)
     .filter(e => !q || `${e.title} ${e.markets.map(m => m.label).join(" ")}`.toLowerCase().includes(q))
     // A search looks across every category, not just the selected one.
@@ -978,7 +998,15 @@ document.addEventListener("click", ev => {
   if (b) { ev.preventDefault(); toggleStar(b.dataset.star); }
 });
 document.getElementById("q").addEventListener("input", render);
-document.getElementById("minvol").addEventListener("change", render);
+if (savedView.minVol != null && [...document.getElementById("minvol").options].some(o => o.value === savedView.minVol)) document.getElementById("minvol").value = savedView.minVol;
+document.getElementById("minvol").addEventListener("change", () => { saveView(); render(); });
+document.getElementById("sourceSeg").addEventListener("click", e => {
+  const pick = e.target.closest("[data-source]")?.dataset.source;
+  if (!pick) return;
+  source = pick;
+  saveView();
+  render();
+});
 if (rank !== "standard" && !RANKS[rank]) rank = "standard";
 load();
 setInterval(load, REFRESH_MS);

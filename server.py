@@ -116,16 +116,19 @@ _kalshi = {"events": [], "updated": None, "error": None}
 
 
 def kalshi_get(path: str):
+    """GET with retries for rate limits (429) and dropped connections."""
     for attempt in range(5):
         req = urllib.request.Request(KALSHI_API + path, headers={"Accept": "application/json", "User-Agent": "ai-odds-board/1.0"})
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
                 return json.load(r)
         except urllib.error.HTTPError as e:
-            if e.code != 429:
+            if e.code != 429 and e.code < 500:
                 raise
-            time.sleep(2 * (attempt + 1))
-    raise RuntimeError("Kalshi kept rate-limiting")
+        except (urllib.error.URLError, ConnectionError, TimeoutError):
+            pass
+        time.sleep(2 * (attempt + 1))
+    raise RuntimeError(f"Kalshi request kept failing: {path}")
 
 
 def kalshi_price(m: dict) -> float | None:
@@ -137,10 +140,30 @@ def kalshi_price(m: dict) -> float | None:
     return last if last > 0 else None
 
 
+KALSHI_SCALE = {"thousand": "K", "million": "M", "billion": "B", "trillion": "T"}
+
+
+def kalshi_threshold(label: str) -> str | None:
+    """Kalshi's threshold ladders ("Above 25.1%", "At least 1550 score", "Above $77.5B",
+    "Above 150 million gallons") in the page's threshold style ("25.1%+", "1550+", "$77.5B+",
+    "150M+"), so it estimates the likely value instead of counting the rungs as separate events.
+    "Below X" becomes "↓X" (a chance the value is at most X)."""
+    m = re.match(r"^(above|over|at least|more than|below|under|less than)\s+(\$?[\d,.]+)\s*(%|[kmbt]\b|thousand|million|billion|trillion)?", label.strip(), re.I)
+    if not m:
+        return None
+    word, number, unit = m.group(1).lower(), m.group(2).replace(",", ""), (m.group(3) or "")
+    unit = KALSHI_SCALE.get(unit.lower(), unit.upper() if unit != "%" else "%")
+    return f"↓{number}{unit}" if word in ("below", "under", "less than") else f"{number}{unit}+"
+
+
 def kalshi_label(label: str) -> str:
     """Kalshi words date ladders as "Before Feb 1, 2027" / "Before 2030"; the page reads Polymarket's
-    "by" style, so give the last day that counts instead ("Jan 31, 2027", "Dec 31, 2029")."""
+    "by" style, so give the last day that counts instead ("Jan 31, 2027", "Dec 31, 2029").
+    Threshold ladders are converted by kalshi_threshold."""
     from datetime import datetime, timedelta
+    threshold = kalshi_threshold(label)
+    if threshold:
+        return threshold
     m = re.match(r"^before\s+(.+)$", label.strip(), re.I)
     if not m:
         return label
@@ -153,6 +176,19 @@ def kalshi_label(label: str) -> str:
             return f"{day:%b} {day.day}, {day.year}"
         except ValueError:
             pass
+    # "Before March, 2027" / "Before November": the last day of the month before. Without a
+    # year, it's the next time that month starts.
+    month = re.fullmatch(r"([A-Za-z]+),?\s*(\d{4})?", rest)
+    if month:
+        for fmt in ("%B", "%b"):
+            try:
+                number = datetime.strptime(month.group(1), fmt).month
+            except ValueError:
+                continue
+            today = datetime.now()
+            year = int(month.group(2)) if month.group(2) else today.year + (number <= today.month)
+            day = datetime(year, number, 1) - timedelta(days=1)
+            return f"{day:%b} {day.day}, {day.year}"
     return label
 
 
@@ -202,10 +238,17 @@ def refresh_kalshi() -> None:
         time.sleep(KALSHI_PAUSE)
     tickers = sorted({x["ticker"] for x in series if KALSHI_AI.search(x.get("title") or "")})
     events = []
+    failed = 0
     for ticker in tickers:
-        page = kalshi_get(f"/events?series_ticker={ticker}&status=open&with_nested_markets=true&limit=100")
+        try:
+            page = kalshi_get(f"/events?series_ticker={ticker}&status=open&with_nested_markets=true&limit=100")
+        except Exception:  # one bad series shouldn't sink the rest
+            failed += 1
+            continue
         events += [ev for ev in (kalshi_event(e) for e in page.get("events", [])) if ev]
         time.sleep(KALSHI_PAUSE)
+    if failed > len(tickers) // 2:
+        raise RuntimeError(f"{failed} of {len(tickers)} Kalshi series failed")
     with _lock:
         _kalshi.update(events=events, updated=time.time(), error=None)
     print(f"Kalshi: {len(events)} open AI events from {len(tickers)} series", flush=True)
@@ -215,11 +258,13 @@ def kalshi_loop() -> None:
     while True:
         try:
             refresh_kalshi()
-        except Exception as e:  # keep serving the last good list
+            wait = KALSHI_REFRESH
+        except Exception as e:  # keep serving the last good list, and try again soon
             with _lock:
                 _kalshi["error"] = str(e)
             print(f"Kalshi refresh failed: {e}", flush=True)
-        time.sleep(KALSHI_REFRESH)
+            wait = 60
+        time.sleep(wait)
 
 
 if __name__ == "__main__":
