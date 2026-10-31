@@ -748,7 +748,7 @@ function renderChips() {
   const nStar = events.filter(e => starred.has(e.id)).length;
   const opts = [
     { id: "all", name: "All" }, { id: "starred", name: `★ Starred${nStar ? ` (${nStar})` : ""}` },
-    { id: "timeline", name: "Timeline" }, { id: "starred-timeline", name: "★ Timeline" }, { id: "confidence", name: "Confidence" }, ...SECTIONS,
+    { id: "timeline", name: "Timeline" }, { id: "starred-timeline", name: "★ Timeline" }, { id: "confidence", name: "Confidence" }, { id: "starred-confidence", name: "★ Confidence" }, ...SECTIONS,
   ];
   el.innerHTML = opts.map(s => `<button class="chip ${s.id === section ? "on" : ""}" data-id="${s.id}">${esc(s.name)}</button>`).join(" ");
   el.querySelectorAll(".chip").forEach(b => b.onclick = () => { section = b.dataset.id; render(); });
@@ -817,15 +817,15 @@ function renderTimeline(q, minVol, onlyStarred) {
   el.innerHTML = html + `</div>`;
 }
 
-// Confidence: every bet with a best guess, most confident first.
-function renderConfidence(q, minVol) {
+// Confidence: every bet with a best guess (or just starred ones), most confident first.
+function renderConfidence(q, minVol, onlyStarred) {
   const items = events
-    .filter(e => e.headline.conf && e.vol >= minVol)
+    .filter(e => e.headline.conf && (onlyStarred ? starred.has(e.id) : e.vol >= minVol))
     .filter(e => !q || `${e.title} ${e.markets.map(m => m.label).join(" ")}`.toLowerCase().includes(q))
     .sort((a, b) => b.headline.conf.score - a.headline.conf.score);
   const el = document.getElementById("sections");
-  if (!items.length) return void (el.innerHTML = `<div class="empty">No bets with a best guess match.</div>`);
-  el.innerHTML = `<h2>Ranked by confidence <span class="count">${items.length}</span><span class="hint">most confident first</span></h2><div class="timeline">${items.map((e, i) => `
+  if (!items.length) return void (el.innerHTML = `<div class="empty">${onlyStarred ? "None of your starred bets has a best guess yet. Star bets to rank them here." : "No bets with a best guess match."}</div>`);
+  el.innerHTML = `<h2>${onlyStarred ? "Starred, ranked by confidence" : "Ranked by confidence"} <span class="count">${items.length}</span><span class="hint">most confident first</span></h2><div class="timeline">${items.map((e, i) => `
     <div class="tl-row cf-row" title="${esc(e.title)}">
       <a class="cover" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" aria-label="${esc(e.title)}"></a>
       <div class="cf-rank">${i + 1}</div>
@@ -845,9 +845,10 @@ function render() {
   renderValuations(q);
   const minVol = Number(document.getElementById("minvol").value);
   const timeline = section === "timeline" || section === "starred-timeline";
-  document.getElementById("tiles-title").hidden = document.getElementById("tiles").hidden = timeline || section === "confidence";
+  const ranked = section === "confidence" || section === "starred-confidence";
+  document.getElementById("tiles-title").hidden = document.getElementById("tiles").hidden = timeline || ranked;
   if (timeline) return renderTimeline(q, minVol, section === "starred-timeline");
-  if (section === "confidence") return renderConfidence(q, minVol);
+  if (ranked) return renderConfidence(q, minVol, section === "starred-confidence");
   const starView = section === "starred";
   const list = events
     .filter(e => starView ? starred.has(e.id) : e.vol >= minVol)
