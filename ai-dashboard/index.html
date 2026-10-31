@@ -70,6 +70,12 @@
     border-radius: 999px; padding: 5px 12px; cursor: pointer; font: inherit;
   }
   .chip.on { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
+  /* Second layer of tabs (ranking), lighter than the scope chips above it. */
+  .subtabs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; flex-basis: 100%; }
+  .subtabs-label { font-size: 12px; color: var(--text-muted); margin-right: 6px; }
+  .subtabs button { font: inherit; font-size: 13px; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-secondary); padding: 4px 10px; cursor: pointer; }
+  .subtabs button:hover { color: var(--text-primary); }
+  .subtabs button[aria-selected="true"] { color: var(--text-primary); font-weight: 600; border-bottom-color: var(--text-primary); }
   .status { color: var(--text-muted); font-size: 12px; margin-left: auto; }
   main { padding: 20px 24px 60px; max-width: 1500px; margin: 0 auto; }
   h2 { font-size: 15px; margin: 28px 0 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .06em; }
@@ -162,13 +168,7 @@
   <div class="controls">
     <input type="search" id="q" placeholder="Search markets (e.g. Claude, IPO, Gemini)">
     <div id="chips"></div>
-    <select id="rank" title="How to order the bets in this tab">
-      <option value="standard">Rank: Standard</option>
-      <option value="importance">Rank: Importance</option>
-      <option value="confidence">Rank: Confidence</option>
-      <option value="timeline">Rank: Timeline</option>
-      <option value="volume">Rank: Volume</option>
-    </select>
+    <div id="ranks" class="subtabs" role="tablist" aria-label="Rank by"></div>
     <select id="minvol" title="Minimum total volume">
       <option value="0">Any volume</option>
       <option value="10000" selected>$10k+ volume</option>
@@ -746,6 +746,15 @@ function renderChips() {
   ];
   el.innerHTML = opts.map(s => `<button class="chip ${s.id === section ? "on" : ""}" data-id="${s.id}">${esc(s.name)}</button>`).join(" ");
   el.querySelectorAll(".chip").forEach(b => b.onclick = () => { section = b.dataset.id; render(); });
+  // Second row: how to order the bets in the chosen tab.
+  const ranks = [["standard", "Standard"], ["importance", "Importance"], ["confidence", "Confidence"], ["timeline", "Timeline"], ["volume", "Volume"]];
+  const rk = document.getElementById("ranks");
+  rk.innerHTML = `<span class="subtabs-label">Rank by</span>` + ranks.map(([id, name]) => `<button role="tab" aria-selected="${id === rank}" data-rank="${id}">${name}</button>`).join("");
+  rk.querySelectorAll("[data-rank]").forEach(b => b.onclick = () => {
+    rank = b.dataset.rank;
+    try { localStorage.setItem(RANK_KEY, rank); } catch {}
+    render();
+  });
 }
 
 function row(m) {
@@ -959,12 +968,7 @@ document.addEventListener("click", ev => {
 });
 document.getElementById("q").addEventListener("input", render);
 document.getElementById("minvol").addEventListener("change", render);
-document.getElementById("rank").value = RANKS[rank] ? rank : "standard";
-document.getElementById("rank").addEventListener("change", e => {
-  rank = e.target.value;
-  try { localStorage.setItem(RANK_KEY, rank); } catch {}
-  render();
-});
+if (rank !== "standard" && !RANKS[rank]) rank = "standard";
 load();
 setInterval(load, REFRESH_MS);
 </script>
