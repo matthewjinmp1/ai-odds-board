@@ -82,6 +82,7 @@
   .tile { position: relative; }
   .tile .cover { position: absolute; inset: 0; border-radius: inherit; }
   .tile .label { padding-right: 26px; }
+  .src { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #0b7a5a; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-right: 4px; vertical-align: 1px; }
   .tile-head { display: flex; gap: 10px; align-items: flex-start; }
   .tile-head img { width: 32px; height: 32px; border-radius: 7px; object-fit: cover; flex: none; }
   .val-tile .tile-head { align-items: center; }
@@ -194,7 +195,7 @@ const SECTIONS = [
   { id: "releases", name: "Model releases", re: /(released|release|launch|debut|drop)/i },
   { id: "ipo", name: "IPOs", re: /\bipo\b|public ticker|list on|exchange will/i },
   { id: "valuation", name: "Valuations & market cap", re: /valuation|market cap|largest (company|private)|private compan|\$\d+ ?[tb]\b|flip/i },
-  { id: "bench", name: "Best model & benchmarks", re: /best ai model|arena|humanity|benchmark|score|openrouter|millennium|#1 ai|top ai/i },
+  { id: "bench", name: "Best model & benchmarks", re: /best (ai|llm|coding model)|top-ranked ai|arena|humanity|benchmark|score|openrouter|millennium|#1 ai|top ai|pareto/i },
   { id: "other", name: "Everything else AI", re: /./ },
 ];
 const AI_WORDS = /\b(ai|a\.i\.|agi|openai|anthropic|claude|fable|opus|sonnet|haiku|gpt|chatgpt|gemini|deepmind|grok|xai|llama|meta ai|deepseek|qwen|mistral|nvidia|data centers?|chatbots?|llms?|models?|robots?|robotics|humanoids?|optimus|self-driving|robotaxis?|waymo|gpus?|[abh]\d00|superintelligence|databricks|perplexity|lambda|anysphere|cursor|cohere|scale ai|cerebras|coreweave|groq|thinking machines|safe superintelligence|ssi|moonshot|kimi|minimax|z\.ai|figure ai)\b/i;
@@ -219,6 +220,8 @@ const starBtn = e => {
   return `<button class="star ${on ? "on" : ""}" data-star="${esc(e.id)}" title="${on ? "Unstar" : "Star"} this bet" aria-label="${on ? "Unstar" : "Star"} this bet" aria-pressed="${on}">${on ? "★" : "☆"}</button>`;
 };
 
+// Bets come from Polymarket (the default, unlabelled) and Kalshi (labelled).
+const sourceBadge = e => e.source === "kalshi" ? `<span class="src" title="From Kalshi">Kalshi</span> ` : "";
 const fmtUSD = n => n >= 1e9 ? `$${(n/1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n/1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n/1e3).toFixed(0)}k` : `$${Math.round(n)}`;
 const pct = p => p >= 0.995 ? ">99%" : p > 0 && p < 0.005 ? "<1%" : `${Math.round(p * 100)}%`;
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -628,6 +631,7 @@ function prepare(e) {
   const text = `${e.title} ${e.slug}`;
   return {
     id: e.id, title: e.title, slug: e.slug, image: e.icon || e.image,
+    source: e.source || "polymarket", url: e.url || `https://polymarket.com/event/${e.slug}`,
     vol: Number(e.volume) || 0, vol24: Number(e.volume24hr) || 0,
     end: e.endDate, markets, sec: SECTIONS.find(s => s.re.test(text)).id, headline,
   };
@@ -636,10 +640,12 @@ function prepare(e) {
 async function load() {
   const status = document.getElementById("status");
   try {
-    const [aiLists, broadLists, searchLists] = await Promise.all([
+    const [aiLists, broadLists, searchLists, kalshi] = await Promise.all([
       Promise.all(AI_TAGS.map(t => fetchTag(t).catch(() => []))),
       Promise.all(BROAD_TAGS.map(t => fetchTag(t).catch(() => []))),
       Promise.all(SEARCHES.map(q => searchEvents(q).catch(() => []))),
+      // Kalshi's AI markets, gathered by server.py (already AI-only); empty if it isn't running.
+      fetch("/api/kalshi").then(r => r.ok ? r.json() : {}).then(d => d.events || []).catch(() => []),
     ]);
     const seen = new Map();
     const add = e => { if (!seen.has(e.id)) { const p = prepare(e); if (p) seen.set(e.id, p); } };
@@ -648,8 +654,10 @@ async function load() {
     [...broadLists.flat(), ...searchLists.flat()]
       .filter(e => !e.closed && e.active !== false && AI_WORDS.test(e.title))
       .forEach(add);
+    kalshi.forEach(add);
     events = [...seen.values()];
-    status.textContent = `${events.length} markets · updated ${new Date().toLocaleTimeString()}`;
+    const nKalshi = events.filter(e => e.source === "kalshi").length;
+    status.textContent = `${events.length} markets${nKalshi ? ` (${nKalshi} from Kalshi)` : ""} · updated ${new Date().toLocaleTimeString()}`;
     render();
     loadValuations();
   } catch (err) {
@@ -711,7 +719,7 @@ function renderValuations(q) {
   el.innerHTML = show && items.length ? `<h2>Current private valuations</h2><div class="tiles">${items.map(({ v, e }) => {
     const by = (e.title.match(/\bby ([^?]+)\?/i) || [])[1];
     return `<div class="tile val-tile" title="${esc(`${v.company} valuation (Nasdaq Private Market)`)}">
-      <a class="cover" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" aria-label="${esc(e.title)}"></a>
+      <a class="cover" href="${esc(e.url)}" target="_blank" rel="noopener" aria-label="${esc(e.title)}"></a>
       <div class="tile-head">${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false">` : ""}<div class="co">${esc(v.company)}</div></div>
       <div class="big">${fmtVal(v.current, "money")}</div>
       <div class="chgs">${chgSpan(valChange(v, 30), "30d")}${chgSpan(valChange(v, 365), "1y")}</div>
@@ -747,7 +755,7 @@ function row(m) {
 
 function card(e) {
   const SHOW = 6;
-  const url = `https://polymarket.com/event/${e.slug}`;
+  const url = e.url;
   const rows = e.markets.map(row);
   const drag = section === "starred";
   return `<article class="card" data-id="${esc(e.id)}"${drag ? ` draggable="true"` : ""}>
@@ -755,7 +763,7 @@ function card(e) {
       ${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false">` : ""}
       <div>
         <a href="${url}" target="_blank" rel="noopener" draggable="false">${esc(e.title)}</a>
-        <div class="meta">${fmtUSD(e.vol)} vol · ${fmtUSD(e.vol24)} 24h${e.end ? ` · ends ${new Date(e.end).toLocaleDateString()}` : ""}</div>
+        <div class="meta">${sourceBadge(e)}${fmtUSD(e.vol)} vol · ${fmtUSD(e.vol24)} 24h${e.end ? ` · ends ${new Date(e.end).toLocaleDateString()}` : ""}</div>
       </div>
       ${starBtn(e)}
     </div>
@@ -795,9 +803,9 @@ function renderTimeline(q, minVol, onlyStarred) {
 function tile(e, { rank, drag, plainDate } = {}) {
   return `
     <div class="tile" title="${esc(e.title)}" data-id="${esc(e.id)}"${drag ? ` draggable="true"` : ""}>
-      <a class="cover" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" aria-label="${esc(e.title)}" draggable="false"></a>
+      <a class="cover" href="${esc(e.url)}" target="_blank" rel="noopener" aria-label="${esc(e.title)}" draggable="false"></a>
       ${starBtn(e)}
-      <div class="tile-head">${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false">` : ""}<div class="label">${esc(e.title)}</div></div>
+      <div class="tile-head">${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false">` : ""}<div class="label">${sourceBadge(e)}${esc(e.title)}</div></div>
       <div class="kind ${e.headline.kind === "Best guess" ? "est" : ""}">${rank ? `<span class="rank">#${rank}</span> ` : ""}${e.headline.kind}</div>
       <div class="big">${esc(plainDate ? e.headline.big.replace(/^~/, "") : e.headline.big)}${awayText(e.headline)}</div>
       ${confBadge(e.headline.conf)}
