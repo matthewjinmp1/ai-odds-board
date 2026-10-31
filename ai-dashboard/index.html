@@ -136,28 +136,7 @@
   .now .spark { width: 110px; height: 24px; margin: 0; margin-left: auto; }
   .away { font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-left: 8px; white-space: nowrap; }
   .tile .big .away { font-size: 14px; }
-  .timeline { display: flex; flex-direction: column; gap: 6px; }
   .tl-month { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin: 14px 0 2px; }
-  .tl-row {
-    /* Rows are only as wide as their columns (date, logo, bet, confidence, star), so a row reads in one glance. */
-    position: relative; display: grid; grid-template-columns: 84px 32px minmax(0, 400px) 150px 24px; gap: 12px; align-items: center;
-    width: fit-content; max-width: 100%;
-    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px;
-  }
-  .tl-row:hover { border-color: var(--text-muted); }
-  .tile .rank { color: var(--text); font-weight: 700; }
-  .tl-row .conf { white-space: nowrap; }
-  .tl-row .cover { position: absolute; inset: 0; border-radius: inherit; }
-  .tl-row img { width: 32px; height: 32px; border-radius: 7px; object-fit: cover; }
-  .tl-date b { font-size: 16px; }
-  .tl-date .away { display: block; margin: 2px 0 0; font-size: 12px; }
-  .tl-title { font-weight: 600; min-width: 0; }
-  .tl-sub { font-weight: 400; font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tl-row .star { position: relative; z-index: 1; }
-  @media (max-width: 700px) {
-    .tl-row { grid-template-columns: 110px 28px minmax(0, 1fr) 24px; }
-    .tl-row .conf { display: none; }
-  }
   .conf { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; position: relative; z-index: 1; cursor: help; }
   .headline .conf { margin-left: 10px; }
   .tile .conf { margin: 4px 0 2px; }
@@ -799,31 +778,27 @@ function renderTimeline(q, minVol, onlyStarred) {
     el.innerHTML = `<div class="empty">${onlyStarred ? "None of your starred bets has a predicted date yet. Star date bets (releases, IPOs…) to see them here." : "No dated bets match."}</div>`;
     return;
   }
-  let month = null, html = `<h2>${onlyStarred ? "Starred timeline" : "Timeline"} <span class="count">${items.length}</span><span class="hint">soonest predicted first</span></h2><div class="timeline">`;
+  // Cards grouped under month headings, soonest first, in reading order within each month.
+  const months = [];
   for (const e of items) {
-    const h = e.headline, m = new Date(h.when).toLocaleDateString(undefined, { month: "long", year: "numeric" });
-    if (m !== month) { month = m; html += `<div class="tl-month">${m}</div>`; }
-    html += `<div class="tl-row" title="${esc(e.title)}">
-      <a class="cover" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" aria-label="${esc(e.title)}"></a>
-      <div class="tl-date"><b>${esc(h.big.replace(/^~/, ""))}</b>${awayText(h)}</div>
-      ${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy">` : `<span></span>`}
-      <div class="tl-title">${esc(e.title)}<div class="tl-sub">${esc(h.sub)}</div></div>
-      ${confBadge(h.conf)}
-      ${starBtn(e)}
-    </div>`;
+    const m = new Date(e.headline.when).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    if (months.at(-1)?.name !== m) months.push({ name: m, items: [] });
+    months.at(-1).items.push(e);
   }
-  el.innerHTML = html + `</div>`;
+  el.innerHTML = `<h2>${onlyStarred ? "Starred timeline" : "Timeline"} <span class="count">${items.length}</span><span class="hint">soonest predicted first, left to right</span></h2>`
+    + months.map(m => `<div class="tl-month">${m.name}</div><div class="tiles">${m.items.map(e => tile(e, { plainDate: true })).join("")}</div>`).join("");
 }
 
-// A best-guess card. `rank` adds a "#n" badge (confidence ranking); `drag` makes it reorderable.
-function tile(e, { rank, drag } = {}) {
+// A best-guess card. `rank` adds a "#n" badge (confidence ranking); `drag` makes it reorderable;
+// `plainDate` drops the "~" from estimated dates (timeline).
+function tile(e, { rank, drag, plainDate } = {}) {
   return `
     <div class="tile" title="${esc(e.title)}" data-id="${esc(e.id)}"${drag ? ` draggable="true"` : ""}>
       <a class="cover" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" aria-label="${esc(e.title)}" draggable="false"></a>
       ${starBtn(e)}
       <div class="tile-head">${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false">` : ""}<div class="label">${esc(e.title)}</div></div>
       <div class="kind ${e.headline.kind === "Best guess" ? "est" : ""}">${rank ? `<span class="rank">#${rank}</span> ` : ""}${e.headline.kind}</div>
-      <div class="big">${esc(e.headline.big)}${awayText(e.headline)}</div>
+      <div class="big">${esc(plainDate ? e.headline.big.replace(/^~/, "") : e.headline.big)}${awayText(e.headline)}</div>
       ${confBadge(e.headline.conf)}
       <div class="sub">${esc(e.headline.sub)}</div>
     </div>`;
