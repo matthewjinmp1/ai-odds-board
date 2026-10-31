@@ -55,23 +55,24 @@
   }
   header {
     position: sticky; top: 0; z-index: 5; background: var(--surface-0);
-    border-bottom: 1px solid var(--border); padding: 14px 24px;
-    display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    border-bottom: 1px solid var(--border); padding: 10px 24px 6px;
+    display: flex; flex-direction: column; gap: 6px;
   }
-  h1 { font-size: 18px; margin: 0 16px 0 0; }
-  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: 1; }
+  .hbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  h1 { font-size: 18px; margin: 0 8px 0 0; }
+  #chips { display: flex; flex-wrap: wrap; gap: 6px; }
   input[type=search], select {
     background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border);
-    border-radius: 8px; padding: 7px 10px; font: inherit;
+    border-radius: 8px; padding: 5px 10px; font: inherit;
   }
   input[type=search] { min-width: 220px; flex: 0 1 300px; }
   .chip {
     background: var(--surface-1); border: 1px solid var(--border); color: var(--text-secondary);
-    border-radius: 999px; padding: 5px 12px; cursor: pointer; font: inherit;
+    border-radius: 999px; padding: 3px 11px; cursor: pointer; font: inherit; font-size: 13px;
   }
   .chip.on { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
   /* Second layer of tabs (ranking), lighter than the scope chips above it. */
-  .subtabs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; flex-basis: 100%; }
+  .subtabs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding-left: 10px; margin-left: 4px; border-left: 1px solid var(--border); }
   .subtabs-label { font-size: 12px; color: var(--text-muted); margin-right: 6px; }
   .subtabs button { font: inherit; font-size: 13px; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-secondary); padding: 4px 10px; cursor: pointer; }
   .subtabs button:hover { color: var(--text-primary); }
@@ -164,11 +165,10 @@
 </head>
 <body>
 <header>
-  <h1>AI Odds Board</h1>
-  <div class="controls">
+  <!-- Two compact rows: title + search + filters, then the scope chips with the ranking tabs beside them. -->
+  <div class="hbar">
+    <h1>AI Odds Board</h1>
     <input type="search" id="q" placeholder="Search markets (e.g. Claude, IPO, Gemini)">
-    <div id="chips"></div>
-    <div id="ranks" class="subtabs" role="tablist" aria-label="Rank by"></div>
     <select id="minvol" title="Minimum total volume">
       <option value="0">Any volume</option>
       <option value="10000" selected>$10k+ volume</option>
@@ -177,6 +177,10 @@
     </select>
     <span class="status" id="status">Loading…</span>
     <button class="chip" id="theme" title="Switch theme"></button>
+  </div>
+  <div class="hbar">
+    <div id="chips"></div>
+    <div id="ranks" class="subtabs" role="tablist" aria-label="Rank by"></div>
   </div>
 </header>
 <main>
