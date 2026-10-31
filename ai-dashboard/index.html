@@ -139,7 +139,8 @@
   .timeline { display: flex; flex-direction: column; gap: 6px; }
   .tl-month { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin: 14px 0 2px; }
   .tl-row {
-    position: relative; display: grid; grid-template-columns: 210px 32px minmax(0, 1fr) 150px 24px; gap: 14px; align-items: center;
+    /* Columns are packed to the left (date, logo, bet, confidence, star) so a row reads in one glance. */
+    position: relative; display: grid; grid-template-columns: 96px 32px minmax(0, 520px) 150px 24px; justify-content: start; gap: 14px; align-items: center;
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px;
   }
   .tl-row:hover { border-color: var(--text-muted); }
