@@ -139,12 +139,14 @@
   .timeline { display: flex; flex-direction: column; gap: 6px; }
   .tl-month { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin: 14px 0 2px; }
   .tl-row {
-    /* Columns are packed to the left (date, logo, bet, confidence, star) so a row reads in one glance. */
-    position: relative; display: grid; grid-template-columns: 96px 32px minmax(0, 520px) 150px 24px; justify-content: start; gap: 14px; align-items: center;
+    /* Rows are only as wide as their columns (date, logo, bet, confidence, star), so a row reads in one glance. */
+    position: relative; display: grid; grid-template-columns: 84px 32px minmax(0, 400px) 150px 24px; gap: 12px; align-items: center;
+    width: fit-content; max-width: 100%;
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px;
   }
   .tl-row:hover { border-color: var(--text-muted); }
-  .cf-row { grid-template-columns: 28px 32px minmax(0, 520px) 150px 150px 24px; }
+  .cf-row { grid-template-columns: 24px 32px minmax(0, 400px) 110px 150px 24px; }
+  .tl-row .conf { white-space: nowrap; }
   .cf-rank { font-size: 13px; font-weight: 600; color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; }
   .tl-row .cover { position: absolute; inset: 0; border-radius: inherit; }
   .tl-row img { width: 32px; height: 32px; border-radius: 7px; object-fit: cover; }
