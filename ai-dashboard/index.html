@@ -82,6 +82,7 @@
   .tile { position: relative; }
   .tile .cover { position: absolute; inset: 0; border-radius: inherit; }
   .tile .label { padding-right: 26px; }
+  .tile .note { color: var(--text-muted); font-size: 11px; margin-top: 4px; font-variant-numeric: tabular-nums; }
   .src { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #0b7a5a; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-right: 4px; vertical-align: 1px; }
   .tile-head { display: flex; gap: 10px; align-items: flex-start; }
   .tile-head img { width: 32px; height: 32px; border-radius: 7px; object-fit: cover; flex: none; }
@@ -161,6 +162,13 @@
   <div class="controls">
     <input type="search" id="q" placeholder="Search markets (e.g. Claude, IPO, Gemini)">
     <div id="chips"></div>
+    <select id="rank" title="How to order the bets in this tab">
+      <option value="standard">Rank: Standard</option>
+      <option value="importance">Rank: Importance</option>
+      <option value="confidence">Rank: Confidence</option>
+      <option value="timeline">Rank: Timeline</option>
+      <option value="volume">Rank: Volume</option>
+    </select>
     <select id="minvol" title="Minimum total volume">
       <option value="0">Any volume</option>
       <option value="10000" selected>$10k+ volume</option>
@@ -734,7 +742,7 @@ function renderChips() {
   const nStar = events.filter(e => starred.has(e.id)).length;
   const opts = [
     { id: "all", name: "All" }, { id: "starred", name: `★ Starred${nStar ? ` (${nStar})` : ""}` },
-    { id: "timeline", name: "Timeline" }, { id: "starred-timeline", name: "★ Timeline" }, { id: "confidence", name: "Confidence" }, { id: "starred-confidence", name: "★ Confidence" }, ...SECTIONS,
+    ...SECTIONS,
   ];
   el.innerHTML = opts.map(s => `<button class="chip ${s.id === section ? "on" : ""}" data-id="${s.id}">${esc(s.name)}</button>`).join(" ");
   el.querySelectorAll(".chip").forEach(b => b.onclick = () => { section = b.dataset.id; render(); });
@@ -775,32 +783,9 @@ function card(e) {
 }
 
 let dragId = null, renderPending = false;
-// Timeline: every bet whose best guess is a date, soonest first, grouped by month.
-function renderTimeline(q, minVol, onlyStarred) {
-  const items = events
-    .filter(e => e.headline.when != null)
-    .filter(e => onlyStarred ? starred.has(e.id) : e.vol >= minVol)
-    .filter(e => !q || `${e.title} ${e.markets.map(m => m.label).join(" ")}`.toLowerCase().includes(q))
-    .sort((a, b) => a.headline.when - b.headline.when);
-  const el = document.getElementById("sections");
-  if (!items.length) {
-    el.innerHTML = `<div class="empty">${onlyStarred ? "None of your starred bets has a predicted date yet. Star date bets (releases, IPOs…) to see them here." : "No dated bets match."}</div>`;
-    return;
-  }
-  // Cards grouped under month headings, soonest first, in reading order within each month.
-  const months = [];
-  for (const e of items) {
-    const m = new Date(e.headline.when).toLocaleDateString(undefined, { month: "long", year: "numeric" });
-    if (months.at(-1)?.name !== m) months.push({ name: m, items: [] });
-    months.at(-1).items.push(e);
-  }
-  el.innerHTML = `<h2>${onlyStarred ? "Starred timeline" : "Timeline"} <span class="count">${items.length}</span><span class="hint">soonest predicted first, left to right</span></h2>`
-    + months.map(m => `<div class="tl-month">${m.name}</div><div class="tiles">${m.items.map(e => tile(e, { plainDate: true })).join("")}</div>`).join("");
-}
-
-// A best-guess card. `rank` adds a "#n" badge (confidence ranking); `drag` makes it reorderable;
-// `plainDate` drops the "~" from estimated dates (timeline).
-function tile(e, { rank, drag, plainDate } = {}) {
+// A best-guess card. `rank` adds a "#n" badge (rankings); `drag` makes it reorderable;
+// `plainDate` drops the "~" from estimated dates (timeline); `note` adds a line (e.g. volume).
+function tile(e, { rank, drag, plainDate, note } = {}) {
   return `
     <div class="tile" title="${esc(e.title)}" data-id="${esc(e.id)}"${drag ? ` draggable="true"` : ""}>
       <a class="cover" href="${esc(e.url)}" target="_blank" rel="noopener" aria-label="${esc(e.title)}" draggable="false"></a>
@@ -810,19 +795,65 @@ function tile(e, { rank, drag, plainDate } = {}) {
       <div class="big">${esc(plainDate ? e.headline.big.replace(/^~/, "") : e.headline.big)}${awayText(e.headline)}</div>
       ${confBadge(e.headline.conf)}
       <div class="sub">${esc(e.headline.sub)}</div>
+      ${note ? `<div class="note">${esc(note)}</div>` : ""}
     </div>`;
 }
 
-// Confidence: every bet with a best guess (or just starred ones), most confident first, as cards
-// in reading order (left to right, then down).
-function renderConfidence(q, minVol, onlyStarred) {
-  const items = events
-    .filter(e => e.headline.conf && (onlyStarred ? starred.has(e.id) : e.vol >= minVol))
-    .filter(e => !q || `${e.title} ${e.markets.map(m => m.label).join(" ")}`.toLowerCase().includes(q))
-    .sort((a, b) => b.headline.conf.score - a.headline.conf.score);
+// ---------- Rankings ----------
+// The tabs set the scope (all, starred, a category); the Rank menu sets the order within it.
+// Standard is the original layout (headline tiles + category cards); the others are one grid of
+// cards in reading order (left to right, then down).
+const RANK_KEY = "ai-odds-board:rank";
+let rank = "standard";
+try { rank = localStorage.getItem(RANK_KEY) || "standard"; } catch {}
+
+// Importance (0–100): how much a bet is worth a look right now.
+//   35% money at stake   log10(total volume), $10M+ scores full marks
+//   20% current interest log10(24h volume), $300k+/day scores full marks
+//   20% confidence       the best guess's confidence (0.3 for bets without one)
+//   25% nearness         how soon it resolves: the best-guess date, else the market's end date;
+//                        halves at ~45 days out
+function importance(e) {
+  const clamp = v => Math.max(0, Math.min(1, v));
+  const money = clamp(Math.log10(Math.max(e.vol, 1)) / 7);
+  const interest = clamp(Math.log10(e.vol24 + 1) / 5.5);
+  const sure = e.headline.conf?.score ?? 0.3;
+  const when = e.headline.when ?? (e.end ? Date.parse(e.end) : null);
+  const days = when == null || isNaN(when) ? null : (when - Date.now()) / DAY;
+  const near = days == null ? 0.2 : 1 / (1 + Math.max(0, days) / 45);
+  return Math.round(100 * (0.35 * money + 0.2 * interest + 0.2 * sure + 0.25 * near));
+}
+
+const RANKS = {
+  importance: { title: "Ranked by importance", hint: "money at stake, current interest, confidence and how soon it resolves",
+    keep: () => true, order: (a, b) => importance(b) - importance(a),
+    note: e => `Importance ${importance(e)} · ${fmtUSD(e.vol)} vol · ${fmtUSD(e.vol24)} 24h` },
+  confidence: { title: "Ranked by confidence", hint: "most confident best guess first",
+    keep: e => e.headline.conf, order: (a, b) => b.headline.conf.score - a.headline.conf.score, empty: "No bets with a best guess match." },
+  volume: { title: "Ranked by volume", hint: "most money traded first",
+    keep: () => true, order: (a, b) => b.vol - a.vol, note: e => `${fmtUSD(e.vol)} vol · ${fmtUSD(e.vol24)} 24h` },
+  timeline: { title: "Timeline", hint: "soonest predicted date first",
+    keep: e => e.headline.when != null, order: (a, b) => a.headline.when - b.headline.when, empty: "No bets with a predicted date match." },
+};
+
+function renderRanked(list, starView) {
+  const r = RANKS[rank], items = list.filter(r.keep).sort(r.order);
   const el = document.getElementById("sections");
-  if (!items.length) return void (el.innerHTML = `<div class="empty">${onlyStarred ? "None of your starred bets has a best guess yet. Star bets to rank them here." : "No bets with a best guess match."}</div>`);
-  el.innerHTML = `<h2>${onlyStarred ? "Starred, ranked by confidence" : "Ranked by confidence"} <span class="count">${items.length}</span><span class="hint">most confident first, left to right</span></h2><div class="tiles">${items.map((e, i) => tile(e, { rank: i + 1 })).join("")}</div>`;
+  const scope = starView ? "starred bets" : "bets";
+  if (!items.length) return void (el.innerHTML = `<div class="empty">${starView && !list.length ? "No starred bets yet. Click ☆ on any bet to pin it here." : r.empty || `No ${scope} match.`}</div>`);
+  const heading = `<h2>${r.title} <span class="count">${items.length}</span><span class="hint">${r.hint}, left to right</span></h2>`;
+  if (rank === "timeline") {
+    // Cards under month headings, soonest first.
+    const months = [];
+    for (const e of items) {
+      const m = new Date(e.headline.when).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+      if (months.at(-1)?.name !== m) months.push({ name: m, items: [] });
+      months.at(-1).items.push(e);
+    }
+    el.innerHTML = heading + months.map(m => `<div class="tl-month">${m.name}</div><div class="tiles">${m.items.map(e => tile(e, { plainDate: true })).join("")}</div>`).join("");
+    return;
+  }
+  el.innerHTML = heading + `<div class="tiles">${items.map((e, i) => tile(e, { rank: i + 1, note: r.note?.(e) })).join("")}</div>`;
 }
 
 function render() {
@@ -832,12 +863,9 @@ function render() {
   const q = document.getElementById("q").value.trim().toLowerCase();
   renderValuations(q);
   const minVol = Number(document.getElementById("minvol").value);
-  const timeline = section === "timeline" || section === "starred-timeline";
-  const ranked = section === "confidence" || section === "starred-confidence";
-  document.getElementById("tiles-title").hidden = document.getElementById("tiles").hidden = timeline || ranked;
-  if (timeline) return renderTimeline(q, minVol, section === "starred-timeline");
-  if (ranked) return renderConfidence(q, minVol, section === "starred-confidence");
   const starView = section === "starred";
+  const ranked = rank !== "standard" && RANKS[rank];
+  document.getElementById("tiles-title").hidden = document.getElementById("tiles").hidden = !!ranked;
   const list = events
     .filter(e => starView ? starred.has(e.id) : e.vol >= minVol)
     .filter(e => !q || `${e.title} ${e.markets.map(m => m.label).join(" ")}`.toLowerCase().includes(q))
@@ -848,6 +876,7 @@ function render() {
     const order = [...starred];
     list.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   }
+  if (ranked) return renderRanked(list, starView);
 
   // Headline tiles: the top few by 24h volume, favouring release dates and IPOs.
   const weight = e => (e.vol24 + e.vol / 30) * (e.headline.kind === "Best guess" ? 4 : 1) * (e.sec === "releases" || e.sec === "ipo" || e.sec === "valuation" ? 2 : 1);
@@ -930,6 +959,12 @@ document.addEventListener("click", ev => {
 });
 document.getElementById("q").addEventListener("input", render);
 document.getElementById("minvol").addEventListener("change", render);
+document.getElementById("rank").value = RANKS[rank] ? rank : "standard";
+document.getElementById("rank").addEventListener("change", e => {
+  rank = e.target.value;
+  try { localStorage.setItem(RANK_KEY, rank); } catch {}
+  render();
+});
 load();
 setInterval(load, REFRESH_MS);
 </script>
