@@ -145,9 +145,8 @@
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px;
   }
   .tl-row:hover { border-color: var(--text-muted); }
-  .cf-row { grid-template-columns: 24px 32px minmax(0, 400px) 110px 150px 24px; }
+  .tile .rank { color: var(--text); font-weight: 700; }
   .tl-row .conf { white-space: nowrap; }
-  .cf-rank { font-size: 13px; font-weight: 600; color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; }
   .tl-row .cover { position: absolute; inset: 0; border-radius: inherit; }
   .tl-row img { width: 32px; height: 32px; border-radius: 7px; object-fit: cover; }
   .tl-date b { font-size: 16px; }
@@ -157,7 +156,6 @@
   .tl-row .star { position: relative; z-index: 1; }
   @media (max-width: 700px) {
     .tl-row { grid-template-columns: 110px 28px minmax(0, 1fr) 24px; }
-    .cf-row { grid-template-columns: 24px 28px minmax(0, 1fr) 90px 24px; }
     .tl-row .conf { display: none; }
   }
   .conf { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; position: relative; z-index: 1; cursor: help; }
@@ -817,7 +815,22 @@ function renderTimeline(q, minVol, onlyStarred) {
   el.innerHTML = html + `</div>`;
 }
 
-// Confidence: every bet with a best guess (or just starred ones), most confident first.
+// A best-guess card. `rank` adds a "#n" badge (confidence ranking); `drag` makes it reorderable.
+function tile(e, { rank, drag } = {}) {
+  return `
+    <div class="tile" title="${esc(e.title)}" data-id="${esc(e.id)}"${drag ? ` draggable="true"` : ""}>
+      <a class="cover" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" aria-label="${esc(e.title)}" draggable="false"></a>
+      ${starBtn(e)}
+      <div class="tile-head">${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false">` : ""}<div class="label">${esc(e.title)}</div></div>
+      <div class="kind ${e.headline.kind === "Best guess" ? "est" : ""}">${rank ? `<span class="rank">#${rank}</span> ` : ""}${e.headline.kind}</div>
+      <div class="big">${esc(e.headline.big)}${awayText(e.headline)}</div>
+      ${confBadge(e.headline.conf)}
+      <div class="sub">${esc(e.headline.sub)}</div>
+    </div>`;
+}
+
+// Confidence: every bet with a best guess (or just starred ones), most confident first, as cards
+// in reading order (left to right, then down).
 function renderConfidence(q, minVol, onlyStarred) {
   const items = events
     .filter(e => e.headline.conf && (onlyStarred ? starred.has(e.id) : e.vol >= minVol))
@@ -825,16 +838,7 @@ function renderConfidence(q, minVol, onlyStarred) {
     .sort((a, b) => b.headline.conf.score - a.headline.conf.score);
   const el = document.getElementById("sections");
   if (!items.length) return void (el.innerHTML = `<div class="empty">${onlyStarred ? "None of your starred bets has a best guess yet. Star bets to rank them here." : "No bets with a best guess match."}</div>`);
-  el.innerHTML = `<h2>${onlyStarred ? "Starred, ranked by confidence" : "Ranked by confidence"} <span class="count">${items.length}</span><span class="hint">most confident first</span></h2><div class="timeline">${items.map((e, i) => `
-    <div class="tl-row cf-row" title="${esc(e.title)}">
-      <a class="cover" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" aria-label="${esc(e.title)}"></a>
-      <div class="cf-rank">${i + 1}</div>
-      ${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy">` : `<span></span>`}
-      <div class="tl-title">${esc(e.title)}<div class="tl-sub">${esc(e.headline.sub)}</div></div>
-      <div class="tl-date"><b>${esc(e.headline.big)}</b>${awayText(e.headline)}</div>
-      ${confBadge(e.headline.conf)}
-      ${starBtn(e)}
-    </div>`).join("")}</div>`;
+  el.innerHTML = `<h2>${onlyStarred ? "Starred, ranked by confidence" : "Ranked by confidence"} <span class="count">${items.length}</span><span class="hint">most confident first, left to right</span></h2><div class="tiles">${items.map((e, i) => tile(e, { rank: i + 1 })).join("")}</div>`;
 }
 
 function render() {
@@ -867,16 +871,7 @@ function render() {
   document.getElementById("tiles-title").innerHTML = starView
     ? `Starred bets${tiles.length > 1 ? `<span class="hint">drag to reorder</span>` : ""}` : "Best guesses";
   const empty = starView ? "No starred bets yet. Click ☆ on any bet to pin it here." : "No markets match.";
-  document.getElementById("tiles").innerHTML = tiles.length ? tiles.map(e => `
-    <div class="tile" title="${esc(e.title)}" data-id="${esc(e.id)}"${starView ? ` draggable="true"` : ""}>
-      <a class="cover" href="https://polymarket.com/event/${e.slug}" target="_blank" rel="noopener" aria-label="${esc(e.title)}" draggable="false"></a>
-      ${starBtn(e)}
-      <div class="tile-head">${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false">` : ""}<div class="label">${esc(e.title)}</div></div>
-      <div class="kind ${e.headline.kind === "Best guess" ? "est" : ""}">${e.headline.kind}</div>
-      <div class="big">${esc(e.headline.big)}${awayText(e.headline)}</div>
-      ${confBadge(e.headline.conf)}
-      <div class="sub">${esc(e.headline.sub)}</div>
-    </div>`).join("") : `<div class="empty">${empty}</div>`;
+  document.getElementById("tiles").innerHTML = tiles.length ? tiles.map(e => tile(e, { drag: starView })).join("") : `<div class="empty">${empty}</div>`;
 
   document.getElementById("sections").innerHTML = SECTIONS.map(s => {
     const items = list.filter(e => e.sec === s.id);
