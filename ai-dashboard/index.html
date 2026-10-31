@@ -713,6 +713,7 @@ function sparkline(v) {
   const tip = `${v.company}: ${fmtVal(h[0][1], "money")} on ${new Date(t0 * 1000).toLocaleDateString()} → ${fmtVal(v.current, "money")} now`;
   return `<svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-label="${esc(tip)}"><title>${esc(tip)}</title><polyline points="${pts}"/></svg>`;
 }
+const VALS_TAB = "private-valuations";
 function renderValuations(q) {
   const el = document.getElementById("vals");
   const byCompany = new Map();
@@ -720,11 +721,10 @@ function renderValuations(q) {
     const v = valuations.get(e.id);
     if (v && !byCompany.has(v.company)) byCompany.set(v.company, { v, e });
   }
-  const show = (section === "all" || section === "valuation") && byCompany.size;
   const items = [...byCompany.values()]
     .filter(({ v, e }) => !q || `${v.company} ${e.title}`.toLowerCase().includes(q))
     .sort((a, b) => b.v.current - a.v.current);
-  el.innerHTML = show && items.length ? `<h2>Current private valuations</h2><div class="tiles">${items.map(({ v, e }) => {
+  el.innerHTML = section !== VALS_TAB ? "" : !items.length ? `<div class="empty">${byCompany.size ? "No valuations match." : "Loading valuations…"}</div>` : `<h2>Current private valuations</h2><div class="tiles">${items.map(({ v, e }) => {
     const by = (e.title.match(/\bby ([^?]+)\?/i) || [])[1];
     return `<div class="tile val-tile" title="${esc(`${v.company} valuation (Nasdaq Private Market)`)}">
       <a class="cover" href="${esc(e.url)}" target="_blank" rel="noopener" aria-label="${esc(e.title)}"></a>
@@ -734,7 +734,7 @@ function renderValuations(q) {
       ${sparkline(v)}
       ${e.headline.kind === "Best guess" ? `<div class="sub">Market's best guess${by ? ` by ${esc(by)}` : ""}: <b>${esc(e.headline.big)}</b></div>` : ""}
     </div>`;
-  }).join("")}</div>` : "";
+  }).join("")}</div>`;
 }
 
 function renderChips() {
@@ -742,7 +742,7 @@ function renderChips() {
   const nStar = events.filter(e => starred.has(e.id)).length;
   const opts = [
     { id: "all", name: "All" }, { id: "starred", name: `★ Starred${nStar ? ` (${nStar})` : ""}` },
-    ...SECTIONS,
+    ...SECTIONS, { id: VALS_TAB, name: "Private valuations" },
   ];
   el.innerHTML = opts.map(s => `<button class="chip ${s.id === section ? "on" : ""}" data-id="${s.id}">${esc(s.name)}</button>`).join(" ");
   el.querySelectorAll(".chip").forEach(b => b.onclick = () => { section = b.dataset.id; render(); });
@@ -872,6 +872,13 @@ function render() {
   const q = document.getElementById("q").value.trim().toLowerCase();
   renderValuations(q);
   const minVol = Number(document.getElementById("minvol").value);
+  const valsView = section === VALS_TAB;
+  document.getElementById("ranks").hidden = valsView;
+  if (valsView) {
+    document.getElementById("tiles-title").hidden = document.getElementById("tiles").hidden = true;
+    document.getElementById("sections").innerHTML = "";
+    return;
+  }
   const starView = section === "starred";
   const ranked = rank !== "standard" && RANKS[rank];
   document.getElementById("tiles-title").hidden = document.getElementById("tiles").hidden = !!ranked;
