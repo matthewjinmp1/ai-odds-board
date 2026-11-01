@@ -868,8 +868,8 @@ const RANKS = {
     keep: e => e.headline.when != null, order: (a, b) => a.headline.when - b.headline.when, empty: "No bets with a predicted date match." },
 };
 
-function renderRanked(list, starView) {
-  const r = RANKS[rank], items = list.filter(r.keep).sort(r.order);
+function renderRanked(list, starView, cardFirst) {
+  const r = RANKS[rank], items = cardFirst(list.filter(r.keep).sort(r.order));
   const el = document.getElementById("sections");
   const scope = starView ? "starred bets" : "bets";
   if (!items.length) return void (el.innerHTML = `<div class="empty">${starView && !list.length ? "No starred bets yet. Click ☆ on any bet to pin it here." : r.empty || `No ${scope} match.`}</div>`);
@@ -916,18 +916,22 @@ function render() {
     const order = [...starred];
     list.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   }
-  if (ranked) return renderRanked(list, starView);
+  // While searching, bets showing the term on the card (title or headline) come before ones that
+  // only match an outcome further down. Timeline keeps its date order.
+  const onCard = e => `${e.title} ${e.headline.big}`.toLowerCase().includes(q);
+  const cardFirst = items => !q || starView || rank === "timeline" ? items : [...items.filter(onCard), ...items.filter(e => !onCard(e))];
+  if (ranked) return renderRanked(list, starView, cardFirst);
 
   // Headline tiles: the top few by 24h volume, favouring release dates and IPOs.
   const weight = e => (e.vol24 + e.vol / 30) * (e.headline.kind === "Best guess" ? 4 : 1) * (e.sec === "releases" || e.sec === "ipo" || e.sec === "valuation" ? 2 : 1);
-  const tiles = starView ? list : [...list].sort((a, b) => weight(b) - weight(a)).slice(0, 12);
+  const tiles = starView ? list : cardFirst([...list].sort((a, b) => weight(b) - weight(a))).slice(0, 12);
   document.getElementById("tiles-title").innerHTML = starView
     ? `Starred bets${tiles.length > 1 ? `<span class="hint">drag to reorder</span>` : ""}` : "Best guesses";
   const empty = starView ? "No starred bets yet. Click ☆ on any bet to pin it here." : "No markets match.";
   document.getElementById("tiles").innerHTML = tiles.length ? tiles.map(e => tile(e, { drag: starView })).join("") : `<div class="empty">${empty}</div>`;
 
   document.getElementById("sections").innerHTML = SECTIONS.map(s => {
-    const items = list.filter(e => e.sec === s.id);
+    const items = cardFirst(list.filter(e => e.sec === s.id));
     if (!items.length) return "";
     const hint = starView && items.length > 1 ? `<span class="hint">drag to reorder</span>` : "";
     return `<h2>${esc(s.name)} <span class="count">${items.length}</span>${hint}</h2><div class="grid"${starView ? " data-reorder" : ""}>${items.map(card).join("")}</div>`;
