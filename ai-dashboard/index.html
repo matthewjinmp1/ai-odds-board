@@ -606,6 +606,13 @@ function estimate(markets, negRisk, title) {
 }
 
 function estimateRaw(markets, negRisk, title) {
+  // A lone "by <date>" market still implies a date: the ladder measures it from today.
+  if (markets.length === 1) {
+    const m = markets[0], d = !negRisk && !NONE_RE.test(m.label) && parseDateBucket(m.label, m.end);
+    if (!d) return null;
+    m.date = d; m.key = d.lo;
+    return dateLadder([m]);
+  }
   if (markets.length < 2) return null;
   const real = markets.filter(m => !NONE_RE.test(m.label)), none = markets.filter(m => NONE_RE.test(m.label));
   if (real.length < 2) return null;
