@@ -741,7 +741,7 @@ function sparkline(v) {
   return `<svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-label="${esc(tip)}"><title>${esc(tip)}</title><polyline points="${pts}"/></svg>`;
 }
 const VALS_TAB = "private-valuations";
-function renderValuations(q) {
+function renderValuations(matches) {
   const el = document.getElementById("vals");
   const byCompany = new Map();
   for (const e of [...events].sort((a, b) => b.vol - a.vol)) {
@@ -749,7 +749,7 @@ function renderValuations(q) {
     if (v && !byCompany.has(v.company)) byCompany.set(v.company, { v, e });
   }
   const items = [...byCompany.values()]
-    .filter(({ v, e }) => !q || `${v.company} ${e.title}`.toLowerCase().includes(q))
+    .filter(({ v, e }) => matches(`${v.company} ${e.title}`))
     .sort((a, b) => b.v.current - a.v.current);
   el.innerHTML = section !== VALS_TAB ? "" : !items.length ? `<div class="empty">${byCompany.size ? "No valuations match." : "Loading valuations…"}</div>` : `<h2>Current private valuations</h2><div class="tiles">${items.map(({ v, e }) => {
     const by = (e.title.match(/\bby ([^?]+)\?/i) || [])[1];
@@ -900,7 +900,10 @@ function render() {
   if (dragId) { renderPending = true; return; }
   renderChips();
   const q = document.getElementById("q").value.trim().toLowerCase();
-  renderValuations(q);
+  // Commas split the search into terms; a bet matches if it has any of them ("claude, fable").
+  const terms = q.split(",").map(t => t.trim()).filter(Boolean);
+  const matches = text => !terms.length || terms.some(t => text.toLowerCase().includes(t));
+  renderValuations(matches);
   const minVol = Number(document.getElementById("minvol").value);
   const valsView = section === VALS_TAB;
   document.getElementById("ranks").hidden = valsView;
@@ -915,7 +918,7 @@ function render() {
   const list = events
     .filter(e => source === "all" || e.source === source)
     .filter(e => starView ? starred.has(e.id) : e.vol >= minVol)
-    .filter(e => !q || `${e.title} ${e.markets.map(m => m.label).join(" ")}`.toLowerCase().includes(q))
+    .filter(e => matches(`${e.title} ${e.markets.map(m => m.label).join(" ")}`))
     // A search looks across every category, not just the selected one.
     .filter(e => section === "all" || starView || q || e.sec === section)
     .sort((a, b) => b.vol - a.vol);
@@ -925,7 +928,7 @@ function render() {
   }
   // While searching, bets showing the term on the card (title or headline) come before ones that
   // only match an outcome further down. Timeline keeps its date order.
-  const onCard = e => `${e.title} ${e.headline.big}`.toLowerCase().includes(q);
+  const onCard = e => terms.some(t => `${e.title} ${e.headline.big}`.toLowerCase().includes(t));
   const cardFirst = items => !q || starView || rank === "timeline" ? items : [...items.filter(onCard), ...items.filter(e => !onCard(e))];
   if (ranked) return renderRanked(list, starView, cardFirst);
 
