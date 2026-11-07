@@ -755,7 +755,7 @@ function renderValuations(matches) {
     const by = (e.title.match(/\bby ([^?]+)\?/i) || [])[1];
     return `<div class="tile val-tile" title="${esc(`${v.company} valuation (Nasdaq Private Market)`)}">
       <a class="cover" href="${esc(e.url)}" target="_blank" rel="noopener" aria-label="${esc(e.title)}"></a>
-      <div class="tile-head">${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false">` : ""}<div class="co">${esc(v.company)}</div></div>
+      <div class="tile-head">${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false" onerror="this.remove()">` : ""}<div class="co">${esc(v.company)}</div></div>
       <div class="big">${fmtVal(v.current, "money")}</div>
       <div class="chgs">${chgSpan(valChange(v, 30), "30d")}${chgSpan(valChange(v, 365), "1y")}</div>
       ${sparkline(v)}
@@ -807,7 +807,7 @@ function card(e) {
   const drag = section === "starred";
   return `<article class="card" data-id="${esc(e.id)}"${drag ? ` draggable="true"` : ""}>
     <div class="card-head">
-      ${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false">` : ""}
+      ${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false" onerror="this.remove()">` : ""}
       <div>
         <a href="${url}" target="_blank" rel="noopener" draggable="false">${esc(e.title)}</a>
         <div class="meta">${sourceBadge(e)}${fmtUSD(e.vol)} vol · ${fmtUSD(e.vol24)} 24h${e.end ? ` · ends ${new Date(e.end).toLocaleDateString()}` : ""}</div>
@@ -829,7 +829,7 @@ function tile(e, { rank, drag, plainDate, note } = {}) {
     <div class="tile" title="${esc(e.title)}" data-id="${esc(e.id)}"${drag ? ` draggable="true"` : ""}>
       <a class="cover" href="${esc(e.url)}" target="_blank" rel="noopener" aria-label="${esc(e.title)}" draggable="false"></a>
       ${starBtn(e)}
-      <div class="tile-head">${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false">` : ""}<div class="label">${sourceBadge(e)}${esc(e.title)}</div></div>
+      <div class="tile-head">${e.image ? `<img src="${esc(e.image)}" alt="" loading="lazy" draggable="false" onerror="this.remove()">` : ""}<div class="label">${sourceBadge(e)}${esc(e.title)}</div></div>
       <div class="kind ${e.headline.kind === "Best guess" ? "est" : ""}">${rank ? `<span class="rank">#${rank}</span> ` : ""}${e.headline.kind}</div>
       <div class="big">${esc(plainDate ? e.headline.big.replace(/^~/, "") : e.headline.big)}${awayText(e.headline)}</div>
       ${confBadge(e.headline.conf)}

@@ -223,6 +223,8 @@ def kalshi_event(e: dict) -> dict | None:
         "slug": e["event_ticker"].lower(),
         "url": f"https://kalshi.com/markets/{series.lower()}",
         "source": "kalshi",
+        # Kalshi keeps a picture per series here (not in the API); the page hides it if missing.
+        "image": f"https://kalshi-public-docs.s3.amazonaws.com/series-images-webp/{series.upper()}.webp",
         "volume": sum(m["volume"] for m in markets),
         "volume24hr": sum(m["volume24h"] for m in markets),
         "endDate": e.get("strike_date") or max((m["endDate"] for m in markets if m["endDate"]), default=None),
