@@ -113,6 +113,16 @@ KALSHI_AI = re.compile(r"\b(ai|a\.i\.|agi|openai|anthropic|claude|fable|chatgpt|
                        r"deepseek|qwen|mistral|kimi|llms?|artificial intelligence|superintelligence|nvidia|"
                        r"data centers?|humanoid|robotaxi|waymo|optimus|perplexity|cursor|anysphere|mythos|astra)\b", re.I)
 _kalshi = {"events": [], "updated": None, "error": None}
+# The last good Kalshi list, kept on disk so a restart serves it while the slow refresh runs.
+KALSHI_CACHE = Path(__file__).resolve().parent / "data" / "kalshi.json"
+
+
+def load_kalshi_cache() -> None:
+    try:
+        cached = json.loads(KALSHI_CACHE.read_text())
+        _kalshi.update(events=cached["events"], updated=cached["updated"], error=None)
+    except (OSError, ValueError, KeyError):
+        pass
 
 
 def kalshi_get(path: str):
@@ -253,6 +263,10 @@ def refresh_kalshi() -> None:
         raise RuntimeError(f"{failed} of {len(tickers)} Kalshi series failed")
     with _lock:
         _kalshi.update(events=events, updated=time.time(), error=None)
+    KALSHI_CACHE.parent.mkdir(exist_ok=True)
+    tmp = KALSHI_CACHE.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"events": events, "updated": _kalshi["updated"]}))
+    tmp.replace(KALSHI_CACHE)
     print(f"Kalshi: {len(events)} open AI events from {len(tickers)} series", flush=True)
 
 
@@ -270,6 +284,7 @@ def kalshi_loop() -> None:
 
 
 if __name__ == "__main__":
+    load_kalshi_cache()
     threading.Thread(target=kalshi_loop, daemon=True).start()
     server = ThreadingHTTPServer(("127.0.0.1", PORT), partial(Handler, directory=str(ROOT)))
     print(f"AI Odds Board on http://localhost:{PORT}")
