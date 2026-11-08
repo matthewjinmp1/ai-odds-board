@@ -889,7 +889,7 @@ function renderRanked(list, starView, cardFirst) {
       if (months.at(-1)?.name !== m) months.push({ name: m, items: [] });
       months.at(-1).items.push(e);
     }
-    el.innerHTML = heading + months.map(m => `<div class="tl-month">${m.name}</div><div class="tiles">${m.items.map(e => tile(e, { plainDate: true })).join("")}</div>`).join("");
+    el.innerHTML = heading + months.map(m => `<div class="tl-month">${m.name}</div><div class="tiles">${m.items.map(e => tile(e, { plainDate: true, note: `${fmtUSD(e.vol)} vol · ${fmtUSD(e.vol24)} 24h` })).join("")}</div>`).join("");
     return;
   }
   el.innerHTML = heading + `<div class="tiles">${items.map((e, i) => tile(e, { rank: i + 1, note: r.note?.(e) })).join("")}</div>`;
