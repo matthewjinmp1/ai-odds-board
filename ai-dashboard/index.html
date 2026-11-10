@@ -528,13 +528,17 @@ function dateLadder(real) {
 
 // "Released on…?" / "Which month?" buckets: mutually exclusive windows, plus maybe a "No … by X" tail.
 function dateBuckets(real, none) {
-  const total = [...real, ...none].reduce((s, m) => s + m.p, 0);
-  if (total <= 0) return null;
+  const realP = real.reduce((s, m) => s + m.p, 0), noneP = none.reduce((s, m) => s + m.p, 0);
+  if (realP <= 0) return null;
+  // Thin day/month buckets are often overpriced together (Opus 5.6 "released on": days sum to
+  // ~112% beside 48% "No release by Nov 30"). Normalizing everything together would shrink the
+  // liquid "No" bet, so it sets how likely it is to happen at all and the buckets only say when.
+  const happens = none.length && noneP < 1 ? 1 - noneP : realP / (realP + noneP);
   real.sort((a, b) => a.date.lo - b.date.lo);
   const coarse = real.some(m => m.date.coarse), f = x => fmtDate(x - 1, coarse);
   const pts = [{ x: real[0].date.lo, y: 0 }];
   let cum = 0;
-  for (const m of real) { cum += m.p / total; pts.push({ x: m.date.hi, y: cum }); }
+  for (const m of real) { cum += m.p / realP * happens; pts.push({ x: m.date.hi, y: cum }); }
   const res = dateResult(pts, f, Math.min(Date.now(), real[0].date.lo), cum, pts.at(-1).x, real.length + none.length);
   return res;
 }
