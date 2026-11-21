@@ -420,7 +420,8 @@ function invNorm(p) {
 // Dates: assume a constant hazard (the pace of "it happens" implied from t0 to the last
 // listed date) and solve for when the chance reaches q.
 // Numbers: fit a normal curve through all the points (log scale for money) and read q off it.
-const MAX_EXTRAP = 10 * 365 * DAY;
+// Far-off guesses are still shown (their confidence is low); only absurd ones (a few % over decades) are dropped.
+const MAX_EXTRAP = 50 * 365 * DAY;
 function quantile(pts, q, { t0, log } = {}) {
   const c = crossing(pts, q, t0 != null);
   if (!c.bound) return c;
