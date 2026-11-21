@@ -513,7 +513,7 @@ function awayText(h) {
     const unit = (v, w) => `${trim1(v)} ${w}${trim1(v) === "1" ? "" : "s"}`;
     return d > 365 ? unit(d / 365.25, "year") : d > 30 ? unit(d / 30.44, "month") : unit(d, "day");
   };
-  const t = n === 0 ? "today" : n === 1 ? "tomorrow" : n < 0 ? `${span(-n)} ago` : `in ${h.after ? "over " : ""}${span(n)}`;
+  const t = n === 0 ? "today" : n === 1 ? "tomorrow" : n < 0 ? `${span(-n)} ago` : `in ${span(n)}`;
   return `<span class="away">${t}</span>`;
 }
 
@@ -526,7 +526,8 @@ function dateResult(pts, f, t0, lastP, lastX, n) {
     coverage: coverageOf(med), n, consistency: consistencyOf(pts),
     precision: precisionOf(pts, { t0 }, med.x, Math.max(Math.abs(med.x - Date.now()), 30 * DAY)),
   };
-  if (med.bound === "hi") return { big: `After ${f(med.x)}`, sub: `only ${pct(lastP)} chance by then`, conf, when: med.x, after: true };
+  // Under 50% even by the last listed date: there is no best-guess date, so show the odds by then instead.
+  if (med.bound === "hi") return { big: `${pct(lastP)} by ${f(lastX)}`, sub: "chance it happens by the last listed date", kind: "Odds" };
   const note = med.extrap ? `extrapolated: ${pct(lastP)} by ${f(lastX)}, same pace after` : "best-guess date (50/50)";
   return { big: med.extrap ? `~${f(med.x)}` : f(med.x), sub: `${note}${rangeText(pts, f, { t0 })}`, conf, when: med.x };
 }
@@ -677,7 +678,7 @@ function prepare(e, topic = "ai") {
   }
 
   let headline;
-  if (est) headline = { ...est, kind: "Best guess" };
+  if (est) headline = { kind: "Best guess", ...est };
   else if (markets.length === 1) headline = { big: pct(markets[0].p), sub: "chance of Yes", kind: "Odds" };
   else headline = { big: markets[0].label, sub: `leading at ${pct(markets[0].p)}`, kind: "Leader" };
 

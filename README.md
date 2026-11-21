@@ -30,7 +30,7 @@ Starts the server at login and restarts it if it crashes. Restart it after pulli
 
 ## How the best guesses work
 
-- **"By date" ladders** (each market = P(happens by date)): treated as a cumulative distribution; the best guess is the date where it crosses 50%.
+- **"By date" ladders** (each market = P(happens by date)): treated as a cumulative distribution; the best guess is the date where it crosses 50%. If even the last date is under 50%, the card shows the odds by that date instead ("19% by Dec 31, 2029").
 - **"On which day/month" buckets**: probabilities normalized, then the median date.
 - **Threshold ladders** ("valuation hit ↑$2T", "score 60%+"): P(value ≥ x) interpolated to the 50% point.
 - **Numeric buckets** ("$1.5–$1.75T", "<500B", "3"): median (or expected value for single numbers), conditioned on the event happening.
