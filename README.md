@@ -1,6 +1,6 @@
 # AI Odds Board
 
-A local dashboard of live AI-related [Polymarket](https://polymarket.com) markets: model release dates, AI IPOs, valuations, benchmarks and more. Groups of related bets (e.g. "released by Oct 24 / Oct 31 / Dec 31") are condensed into a single best-guess number.
+A local dashboard of live AI-related [Polymarket](https://polymarket.com) markets: model release dates, AI IPOs, valuations, benchmarks and more. A separate **Tech** tab holds non-AI tech bets (Tesla & SpaceX, tech deals and IPOs, big-tech market caps), kept out of the All view. Groups of related bets (e.g. "released by Oct 24 / Oct 31 / Dec 31") are condensed into a single best-guess number.
 
 Market data comes from Polymarket's free public Gamma API (no API key, no build step) and refreshes every 60 seconds. Current private valuations (Nasdaq Private Market data shown on Polymarket's "valuation hit" pages) aren't in the public API, so `server.py` reads them from those pages and caches them for 15 minutes.
 

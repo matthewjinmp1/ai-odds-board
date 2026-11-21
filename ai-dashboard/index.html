@@ -74,6 +74,7 @@
     background: var(--surface-1); border: 1px solid var(--border); color: var(--text-secondary);
     border-radius: 999px; padding: 3px 11px; cursor: pointer; font: inherit; font-size: 13px;
   }
+  .chip.sep { margin-left: 10px; }
   .chip.on { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
   /* Second layer of tabs (ranking), lighter than the scope chips above it. */
   .subtabs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding-left: 10px; margin-left: 4px; border-left: 1px solid var(--border); }
@@ -207,6 +208,12 @@ const BROAD_TAGS = ["gemini", "google", "nvidia", "tech", "big-tech", "business"
 // Free-text searches catch AI bets filed under unrelated tags (e.g. an AI executive order under politics).
 const SEARCHES = ["AI", "artificial intelligence", "AGI", "superintelligence", "data center", "humanoid robot", "LLM",
   "AI executive order", "AI bill", "AI regulation", "AI chips", "AI model"];
+// Tech bets (not AI) get their own tab: these tags plus the broad ones, kept when the title names a
+// tech company or a deal, and left out of All so the AI board stays AI.
+const TECH_TAGS = ["spacex", "tesla", "apple", "microsoft", "amazon", "meta", "acquisitions", "market-cap"];
+const TECH_WORDS = /\b(tesla|spacex|starship|starlink|cybercab|robovan|roadster|cybertruck|apple|iphone|vision pro|microsoft|github|aws|google|alphabet|amazon|meta|instagram|whatsapp|nvidia|amd|intel|tsmc|qualcomm|broadcom|samsung|oracle|salesforce|ibm|palantir|uber|airbnb|stripe|paypal|discord|reddit|tiktok|bytedance|anduril|coinbase|robinhood|shopify|spotify|ipos?|market cap|largest company|acquired|acquire|acquisition|merger|ceos?|antitrust|semiconductors?|chips?|quantum|satellites?)\b/i;
+// Short-term share-price ladders ("What will NVIDIA (NVDA) hit in November?") and pop-culture bets aren't tech news.
+const TECH_SKIP = /\([A-Z]{1,5}\)|close above|searched|netflix|stranger things|airline|starbucks|chipotle|merck|moderna|jpmorgan/i;
 const REFRESH_MS = 60_000;
 
 // First match wins, so order matters.
@@ -217,6 +224,13 @@ const SECTIONS = [
   { id: "bench", name: "Best model & benchmarks", re: /best (ai|llm|coding model)|top-ranked ai|arena|humanity|benchmark|score|openrouter|millennium|#1 ai|top ai|pareto/i },
   { id: "other", name: "Everything else AI", re: /./ },
 ];
+const TECH_SECTIONS = [
+  { id: "tech-musk", name: "Tesla & SpaceX", re: /tesla|spacex|starship|starlink|cybercab|robovan|roadster|cybertruck|musk/i },
+  { id: "tech-deals", name: "Deals & IPOs", re: /\bipo|merger|acquir|stake in/i },
+  { id: "tech-cap", name: "Market cap", re: /market cap|largest company|valuation/i },
+  { id: "tech-other", name: "Everything else tech", re: /./ },
+];
+const TECH_TAB = "tech";
 const AI_WORDS = /\b(ai|a\.i\.|agi|openai|anthropic|claude|fable|opus|sonnet|haiku|gpt|chatgpt|gemini|deepmind|grok|xai|llama|meta ai|deepseek|qwen|mistral|nvidia|data centers?|chatbots?|llms?|models?|robots?|robotics|humanoids?|optimus|self-driving|robotaxis?|waymo|gpus?|[abh]\d00|superintelligence|databricks|perplexity|lambda|anysphere|cursor|cohere|scale ai|cerebras|coreweave|groq|thinking machines|safe superintelligence|ssi|moonshot|kimi|minimax|z\.ai|figure ai)\b/i;
 
 let events = [];
@@ -639,7 +653,7 @@ function estimateRaw(markets, negRisk, title) {
   return null;
 }
 
-function prepare(e) {
+function prepare(e, topic = "ai") {
   const markets = (e.markets || [])
     .filter(m => !m.closed && m.active !== false)
     .map(m => ({
@@ -672,31 +686,36 @@ function prepare(e) {
     id: e.id, title: e.title, slug: e.slug, image: e.icon || e.image,
     source: e.source || "polymarket", url: e.url || `https://polymarket.com/event/${e.slug}`,
     vol: Number(e.volume) || 0, vol24: Number(e.volume24hr) || 0,
-    end: e.endDate, markets, sec: SECTIONS.find(s => s.re.test(text)).id, headline,
+    end: e.endDate, markets, sec: (topic === "tech" ? TECH_SECTIONS : SECTIONS).find(s => s.re.test(text)).id, topic, headline,
   };
 }
 
 async function load() {
   const status = document.getElementById("status");
   try {
-    const [aiLists, broadLists, searchLists, kalshi] = await Promise.all([
+    const [aiLists, broadLists, searchLists, kalshi, techLists] = await Promise.all([
       Promise.all(AI_TAGS.map(t => fetchTag(t).catch(() => []))),
       Promise.all(BROAD_TAGS.map(t => fetchTag(t).catch(() => []))),
       Promise.all(SEARCHES.map(q => searchEvents(q).catch(() => []))),
       // Kalshi's AI markets, gathered by server.py (already AI-only); empty if it isn't running.
       fetch("/api/kalshi").then(r => r.ok ? r.json() : {}).then(d => d.events || []).catch(() => []),
+      Promise.all(TECH_TAGS.map(t => fetchTag(t).catch(() => []))),
     ]);
     const seen = new Map();
-    const add = e => { if (!seen.has(e.id)) { const p = prepare(e); if (p) seen.set(e.id, p); } };
-    aiLists.flat().forEach(add);
+    const add = (e, topic) => { if (!seen.has(e.id)) { const p = prepare(e, topic); if (p) seen.set(e.id, p); } };
+    aiLists.flat().forEach(e => add(e));
     // Broad tags and fuzzy search results: keep only events whose title looks AI-related.
     [...broadLists.flat(), ...searchLists.flat()]
       .filter(e => !e.closed && e.active !== false && AI_WORDS.test(e.title))
-      .forEach(add);
-    kalshi.forEach(add);
+      .forEach(e => add(e));
+    kalshi.forEach(e => add(e));
+    // Tech: whatever is left in the tech and broad tags that names a tech company or deal.
+    [...techLists.flat(), ...broadLists.flat()]
+      .filter(e => !e.closed && e.active !== false && !AI_WORDS.test(e.title) && TECH_WORDS.test(e.title) && !TECH_SKIP.test(e.title))
+      .forEach(e => add(e, "tech"));
     events = [...seen.values()];
-    const nKalshi = events.filter(e => e.source === "kalshi").length;
-    status.textContent = `${events.length} markets${nKalshi ? ` (${nKalshi} from Kalshi)` : ""} · updated ${new Date().toLocaleTimeString()}`;
+    const nKalshi = events.filter(e => e.source === "kalshi").length, nTech = events.filter(e => e.topic === "tech").length;
+    status.textContent = `${events.length - nTech} AI + ${nTech} tech markets${nKalshi ? ` (${nKalshi} from Kalshi)` : ""} · updated ${new Date().toLocaleTimeString()}`;
     render();
     loadValuations();
   } catch (err) {
@@ -773,11 +792,11 @@ function renderChips() {
   const nStar = events.filter(e => starred.has(e.id)).length;
   const opts = [
     { id: "all", name: "All" }, { id: "starred", name: `★ Starred${nStar ? ` (${nStar})` : ""}` },
-    ...SECTIONS, { id: VALS_TAB, name: "Private valuations" },
+    ...SECTIONS, { id: VALS_TAB, name: "Private valuations" }, { id: TECH_TAB, name: "Tech", cls: "sep" },
   ];
   // A remembered tab that no longer exists (e.g. the old Timeline tab) falls back to All.
   if (!opts.some(o => o.id === section)) section = "all";
-  el.innerHTML = opts.map(s => `<button class="chip ${s.id === section ? "on" : ""}" data-id="${s.id}">${esc(s.name)}</button>`).join(" ");
+  el.innerHTML = opts.map(s => `<button class="chip ${s.id === section ? "on" : ""} ${s.cls || ""}" data-id="${s.id}">${esc(s.name)}</button>`).join(" ");
   el.querySelectorAll(".chip").forEach(b => b.onclick = () => { section = b.dataset.id; saveView(); render(); });
   for (const b of document.querySelectorAll("#sourceSeg [data-source]")) b.setAttribute("aria-pressed", String(b.dataset.source === source));
   // Second row: how to order the bets in the chosen tab.
@@ -924,7 +943,7 @@ function render() {
     .filter(e => starView ? starred.has(e.id) : e.vol >= minVol)
     .filter(e => matches(`${e.title} ${e.markets.map(m => m.label).join(" ")}`))
     // A search looks across every category, not just the selected one.
-    .filter(e => section === "all" || starView || q || e.sec === section)
+    .filter(e => starView || q || (section === "all" ? e.topic !== "tech" : section === TECH_TAB ? e.topic === "tech" : e.sec === section))
     .sort((a, b) => b.vol - a.vol);
   if (starView) {
     const order = [...starred];
@@ -944,7 +963,7 @@ function render() {
   const empty = starView ? "No starred bets yet. Click ☆ on any bet to pin it here." : "No markets match.";
   document.getElementById("tiles").innerHTML = tiles.length ? tiles.map(e => tile(e, { drag: starView })).join("") : `<div class="empty">${empty}</div>`;
 
-  document.getElementById("sections").innerHTML = SECTIONS.map(s => {
+  document.getElementById("sections").innerHTML = [...SECTIONS, ...TECH_SECTIONS].map(s => {
     const items = cardFirst(list.filter(e => e.sec === s.id));
     if (!items.length) return "";
     const hint = starView && items.length > 1 ? `<span class="hint">drag to reorder</span>` : "";
